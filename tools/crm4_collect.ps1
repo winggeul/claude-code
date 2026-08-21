@@ -86,31 +86,56 @@ function Write-Log([string]$msg, [string]$color = "Gray") {
     $script:Log += $line
 }
 
-function Find-MainWindow([int]$processId) {
-    $script:hit = [IntPtr]::Zero
+# PowerShell 스크립트블록을 델리게이트로 넘기면, 콜백 안에서 그 함수의 지역 변수가
+# 보이지 않는 경우가 있다. 그래서 콜백에서는 스크립트 범위 변수에 담기만 하고
+# 조건 판단은 전부 콜백 바깥에서 한다.
+
+function Get-TopWindows {
+    $script:tops = @()
     $cb = [C4+EnumProc]{
         param($h, $l)
         $o = 0
         [void][C4]::GetWindowThreadProcessId($h, [ref]$o)
-        if ($o -eq $processId -and [C4]::IsWindowVisible($h) -and [C4]::TextOf($h) -like "*통합고객목록*") {
-            $script:hit = $h; return $false
+        $script:tops += [pscustomobject]@{
+            Handle  = $h
+            OwnerPid= [int]$o
+            Title   = [C4]::TextOf($h)
+            Class   = [C4]::ClassOf($h)
+            Visible = [C4]::IsWindowVisible($h)
         }
         return $true
     }
     [void][C4]::EnumWindows($cb, [IntPtr]::Zero)
-    return $script:hit
+    return $script:tops
 }
 
-function Get-Control([IntPtr]$root, [int]$controlId) {
-    $script:found = [IntPtr]::Zero
+function Find-MainWindow([int]$processId) {
+    $m = @(Get-TopWindows | Where-Object {
+        $_.OwnerPid -eq $processId -and $_.Visible -and $_.Title -like "*통합고객목록*"
+    })
+    if ($m.Count -gt 0) { return $m[0].Handle }
+    return [IntPtr]::Zero
+}
+
+function Update-ControlMap([IntPtr]$root) {
+    $script:ctrls = @{}
     $cb = [C4+EnumProc]{
         param($h, $l)
-        if ([C4]::GetDlgCtrlID($h) -eq $controlId) { $script:found = $h; return $false }
+        $script:ctrls[[C4]::GetDlgCtrlID($h)] = $h
         return $true
     }
     [void][C4]::EnumChildWindows($root, $cb, [IntPtr]::Zero)
-    if ($script:found -eq [IntPtr]::Zero) { throw "컨트롤 $controlId 을 찾지 못했습니다." }
-    return $script:found
+    return $script:ctrls.Count
+}
+
+function Get-Control([IntPtr]$root, [int]$controlId) {
+    if (-not $script:ctrls -or -not $script:ctrls.ContainsKey($controlId)) {
+        [void](Update-ControlMap $root)
+    }
+    if (-not $script:ctrls.ContainsKey($controlId)) {
+        throw "컨트롤 $controlId 을 찾지 못했습니다."
+    }
+    return $script:ctrls[$controlId]
 }
 
 # 이 프로그램의 버튼은 대부분 직접 그린 컨트롤이라 BM_CLICK 이 통하지 않는다.
@@ -189,6 +214,10 @@ if ($win -eq [IntPtr]::Zero) {
     Write-Host "통합고객목록 창을 열어주세요. (고객관리 > 통합고객목록)" -ForegroundColor Red; exit 1
 }
 
+$n = Update-ControlMap $win
+Write-Host "컨트롤 $n 개를 찾았습니다." -ForegroundColor Gray
+if ($n -lt 50) { Write-Host "컨트롤이 너무 적습니다. 통합고객목록 창이 맞는지 확인하세요." -ForegroundColor Yellow }
+
 if (-not (Test-Path $OutputRoot)) { New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null }
 
 if ($DryRun) {
@@ -202,6 +231,23 @@ if ($DryRun) {
             Write-Host ("  실패 {0,-10} id={1}" -f $k, $ID[$k]) -ForegroundColor Red
         }
     }
+    exit 0
+}
+
+# -Start 를 직접 주지 않았으면 이미 받아둔 마지막 날 다음날부터 어제까지를 메운다.
+# PC 가 며칠 꺼져 있었더라도 다음에 켜질 때 밀린 날짜가 한 번에 따라잡힌다.
+if (-not $PSBoundParameters.ContainsKey('Start')) {
+    $done = Get-ChildItem $OutputRoot -Filter "customers_*.xls" -ErrorAction SilentlyContinue |
+            ForEach-Object { if ($_.BaseName -match '(\d{4}-\d{2}-\d{2})') { [datetime]$Matches[1] } } |
+            Sort-Object -Descending | Select-Object -First 1
+    if ($done) {
+        $Start = $done.AddDays(1)
+        Write-Host "마지막 수집일: $($done.ToString('yyyy-MM-dd')) - 그 다음날부터 이어받습니다." -ForegroundColor Gray
+    }
+}
+
+if ($Start -gt $End) {
+    Write-Host "받을 날짜가 없습니다. 이미 어제까지 다 받았습니다." -ForegroundColor Green
     exit 0
 }
 
@@ -270,19 +316,10 @@ while ($day -le $End.Date) {
         $dlg = [IntPtr]::Zero
         $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline -and $dlg -eq [IntPtr]::Zero) {
-            $script:hit = [IntPtr]::Zero
-            $cb = [C4+EnumProc]{
-                param($h, $l)
-                $o = 0
-                [void][C4]::GetWindowThreadProcessId($h, [ref]$o)
-                if ($o -eq $proc.Id -and [C4]::IsWindowVisible($h) -and [C4]::ClassOf($h) -eq "#32770") {
-                    $script:hit = $h; return $false
-                }
-                return $true
-            }
-            [void][C4]::EnumWindows($cb, [IntPtr]::Zero)
-            $dlg = $script:hit
-            if ($dlg -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 500 }
+            $cand = @(Get-TopWindows | Where-Object {
+                $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Class -eq "#32770"
+            })
+            if ($cand.Count -gt 0) { $dlg = $cand[0].Handle } else { Start-Sleep -Milliseconds 500 }
         }
         if ($dlg -eq [IntPtr]::Zero) { throw "저장 대화상자가 뜨지 않았습니다." }
 
