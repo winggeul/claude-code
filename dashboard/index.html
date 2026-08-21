@@ -184,7 +184,7 @@
 
   <section class="card">
     <h2>유입경로별 구성</h2>
-    <p class="note">상위 7개 경로 + 그 외. 코드가 붙은 경로는 이름 기준으로 묶었습니다. 막대에 커서를 올리면 상세가 나옵니다.</p>
+    <p class="note">상위 7개 채널 + 그 외. 막대에 커서를 올리면 채널별 건수가 나옵니다.</p>
     <ul class="legend" id="legend-stack"></ul>
     <div class="plot" id="plot-stack"><div class="tip" id="tip-stack"></div></div>
   </section>
@@ -456,66 +456,70 @@ function drawTrend(agg) {
   host.appendChild(svg);
 }
 
-// ── 경로별 구성 (누적 막대) ──────────────────────────────────
+// ── 경로별 구성 (가로 누적 막대) ────────────────────────
+// 표와 같은 방향으로 읽히도록 기간을 세로로 세운다. 기간이 늘어도 이름이 겹치지 않는다.
 function drawStack(agg) {
   const host = el("plot-stack"), tip = el("tip-stack");
   host.querySelectorAll("svg").forEach(n => n.remove());
 
-  const W = Math.max(host.clientWidth, 320), H = 280;
-  const m = { t: 14, r: 16, b: 30, l: 44 };
-  const iw = W - m.l - m.r, ih = H - m.t - m.b;
   const pts = agg.buckets;
   if (!pts.length) return;
 
   const colors = colorOf(agg.names);
+  const W = Math.max(host.clientWidth, 320);
+  const rowH = 28, m = { t: 26, r: 58, b: 8, l: 62 };
+  const H = m.t + m.b + pts.length * rowH;
+  const iw = W - m.l - m.r;
   const max = Math.max(...pts.map(b => b.total), 1);
   const ticks = niceTicks(max);
   const top = ticks[ticks.length - 1];
-  const slot = iw / pts.length;
-  const bw = Math.min(38, slot * 0.68);
-  const Y = (v) => m.t + ih - (v / top) * ih;
+  const X = (v) => m.l + (v / top) * iw;
 
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
-    "aria-label": "기간별 유입경로 구성 누적 막대" });
+    "aria-label": "기간별 유입경로 구성 가로 누적 막대" });
 
-  for (const t of ticks) {
-    svg.appendChild(svgEl("line", { class: t === 0 ? "baseline" : "gridline",
-      x1: m.l, x2: m.l + iw, y1: Y(t), y2: Y(t) }));
-    const lb = svgEl("text", { class: "tick", x: m.l - 8, y: Y(t) + 4, "text-anchor": "end" });
-    lb.textContent = fmt(t); svg.appendChild(lb);
+  for (const v of ticks) {
+    svg.appendChild(svgEl("line", { class: v === 0 ? "baseline" : "gridline",
+      x1: X(v), x2: X(v), y1: m.t - 6, y2: m.t + pts.length * rowH }));
+    const lb = svgEl("text", { class: "tick", x: X(v), y: m.t - 12, "text-anchor": "middle" });
+    lb.textContent = fmt(v); svg.appendChild(lb);
   }
 
-  const step = Math.ceil(pts.length / Math.max(3, Math.floor(iw / 58)));
   pts.forEach((b, i) => {
-    const cx = m.l + slot * i + slot / 2;
-    if (!(i % step) || i === pts.length - 1) {
-      const lb = svgEl("text", { class: "tick", x: cx, y: H - 10, "text-anchor": "middle" });
-      lb.textContent = b.label; svg.appendChild(lb);
-    }
+    const y = m.t + i * rowH + 5;
+    const h = rowH - 12;
 
-    // 위에서부터 쌓고, 조각 사이에 2px 면색 간격을 둬 경계를 분리한다.
+    const lb = svgEl("text", { class: "tick", x: m.l - 10, y: y + h / 2 + 4, "text-anchor": "end" });
+    lb.textContent = b.label;
+    if (b.sat) { lb.setAttribute("fill", cssVar("--s1")); lb.setAttribute("font-weight", "600"); }
+    svg.appendChild(lb);
+
+    // 왼쪽부터 쌓고, 조각 사이에 2px 면색 간격을 둬 경계를 분리한다.
     let acc = 0;
     const stack = agg.names.filter(n => b.parts[n] > 0);
     stack.forEach((n, k) => {
       const v = b.parts[n];
-      const y0 = Y(acc + v), y1 = Y(acc);
+      const x0 = X(acc), x1 = X(acc + v);
       const gap = k < stack.length - 1 ? 2 : 0;
-      const h = Math.max(0, y1 - y0 - gap);
-      const isTop = k === stack.length - 1;
+      const w = Math.max(0, x1 - x0 - gap);
+      const isEnd = k === stack.length - 1;
       const path = svgEl("path", {
-        d: barPath(cx - bw / 2, y0, bw, h, 4, isTop),
-        fill: colors.get(n), tabindex: -1 });
-      path.addEventListener("mousemove", (ev) => {
+        d: isEnd ? barPathH(x0, y, w, h, 4) : `M${x0},${y}h${w}v${h}h${-w}Z`,
+        fill: colors.get(n) });
+      path.addEventListener("mousemove", () => {
         const r = svg.getBoundingClientRect();
-        const rows = agg.names.filter(x => b.parts[x] > 0).slice().reverse().map(x =>
+        const rows = stack.slice().reverse().map(x =>
           `<div class="t-row"><span class="nm"><span class="swatch" style="background:${colors.get(x)}"></span>${x}</span><span class="vl">${fmt(b.parts[x])}</span></div>`).join("");
-        showTip(tip, host, cx * (r.width / W), (y0 * (r.height / H)) - 20,
+        showTip(tip, host, x1 * (r.width / W), (y * (r.height / H)) - 16,
           `<div class="t-head">${b.label} · 합계 ${fmt(b.total)}건</div>${rows}`);
       });
       path.addEventListener("mouseleave", () => hideTip(tip));
       svg.appendChild(path);
       acc += v;
     });
+
+    const vl = svgEl("text", { class: "dlabel", x: X(b.total) + 8, y: y + h / 2 + 4 });
+    vl.textContent = fmt(b.total); svg.appendChild(vl);
   });
 
   host.appendChild(svg);
