@@ -55,6 +55,9 @@
   .topbar h1 { font-size: 18px; margin: 0; }
   .meta { margin-bottom: 18px; }
   .zero { color: var(--muted); }
+  /* 토요일은 근무 형태가 달라 수치가 눈에 띄게 낮다. 한눈에 구분되게 표시한다. */
+  tbody tr.sat td:first-child { color: var(--s1); font-weight: 600; }
+  tbody tr.sat td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
   td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
 
   body {
@@ -192,12 +195,6 @@
     <div class="plot" id="plot-rank"><div class="tip" id="tip-rank"></div></div>
   </section>
 
-  <section class="card">
-    <h2>채널 세부</h2>
-    <p class="note">코드가 여러 개인 채널의 원본 값입니다.</p>
-    <div class="tablewrap" id="detailwrap"></div>
-  </section>
-
   <footer id="foot"></footer>
 </div>
 
@@ -213,7 +210,18 @@ const GROUP_ALIAS = [
   ["네이버", "네이버"],   // 네이버-키워드 · 네이버카페-아사모 · 네이버-AI
 ];
 
+// 이름을 줄이지 않고 원래 값 그대로 쓰는 것들. '기타' 처럼 이름만으로는 뭉뚱그려지는 경우다.
+const KEEP_AS_IS = [/^기타\(/];
+
+// 세부 항목의 열쇠. 'SOOP-PPL(1919)봉준★♨' 와 'SOOP-PPL(1919)봉준' 은 같은 코드이므로 한 줄이다.
+// 코드가 없는 값은 나눌 근거가 없으므로 채널 이름으로 합친다.
+function detailKeyOf(ch) {
+  const m = ch.match(/^(.*?\(\d{3,5}\))/);
+  return m ? m[1] : groupOf(ch);
+}
+
 function groupOf(ch) {
+  for (const re of KEEP_AS_IS) if (re.test(ch)) return ch.replace(/[^\w가-힣()\-]+$/, "");
   let base = ch.split("(")[0].trim() || ch;
   const dash = base.indexOf("-");
   if (dash > 0) base = base.slice(0, dash).trim();
@@ -246,6 +254,8 @@ function channelOrder(rows) {
   const top = sorted.slice(0, TOP_N);
   return { top, hasFold: sorted.length > TOP_N };
 }
+
+const isSaturday = (iso) => new Date(iso + "T00:00:00").getDay() === 6;
 
 function bucketKey(iso, grain) {
   const d = new Date(iso + "T00:00:00");
@@ -286,6 +296,7 @@ function aggregate() {
     const b = map.get(k);
     return {
       key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all,
+      sat: GRAIN === "day" && isSaturday(k),
       total: names.reduce((s, n) => s + b.parts[n], 0),
     };
   });
@@ -302,7 +313,8 @@ function aggregate() {
     const key = top.includes(g) ? g : FOLD;
     if (!detail.has(key)) detail.set(key, new Map());
     const m = detail.get(key);
-    m.set(r.channel, (m.get(r.channel) || 0) + r.count);
+    const sub = detailKeyOf(r.channel);
+    m.set(sub, (m.get(sub) || 0) + r.count);
   }
   for (const [k, m] of detail)
     detail.set(k, [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
@@ -647,7 +659,7 @@ function drawTable(agg) {
     cols.map(n => `<th>${n}</th>`).join("") + `<th class="sum">합계</th></tr>`;
   const body = agg.buckets.map(b => {
     const t = cols.reduce((s, n) => s + (b.all[n] || 0), 0);
-    return `<tr><td>${b.label}</td>` +
+    return `<tr${b.sat ? ' class="sat"' : ""}><td>${b.label}</td>` +
       cols.map(n => `<td>${b.all[n] ? fmt(b.all[n]) : "<span class=\"zero\">–</span>"}</td>`).join("") +
       `<td class="sum">${fmt(t)}</td></tr>`;
   }).join("");
@@ -656,15 +668,6 @@ function drawTable(agg) {
     `<td class="sum">${fmt(agg.buckets.reduce((s, b) => s + cols.reduce((x, n) => x + (b.all[n] || 0), 0), 0))}</td></tr>`;
   el("tablewrap").innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
 
-  const det = agg.totals.filter(g => g.value > 0).map(g => {
-    const subs = (agg.detail.get(g.name) || []).filter(s => s.value > 0);
-    if (subs.length <= 1) return "";
-    return `<tr><td colspan="2" style="font-weight:600">${g.name}</td><td>${fmt(g.value)}</td></tr>` +
-      subs.map(s => `<tr><td></td><td style="text-align:left;color:var(--text-secondary)">${s.name}</td><td>${fmt(s.value)}</td></tr>`).join("");
-  }).join("");
-  el("detailwrap").innerHTML = det
-    ? `<table><thead><tr><th>채널</th><th>세부</th><th>누계</th></tr></thead><tbody>${det}</tbody></table>`
-    : `<p class="note">세부가 나뉜 채널이 없습니다.</p>`;
 }
 
 function render() {
