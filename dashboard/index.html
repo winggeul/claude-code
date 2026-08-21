@@ -16,7 +16,7 @@
     --good:         #006300;
     --critical:     #d03b3b;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
-    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7;
+    --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
     --font-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
     --font-num: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   }
@@ -28,7 +28,7 @@
       --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
       --good:#0ca30c; --critical:#d03b3b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-      --s5:#d55181; --s6:#008300; --s7:#9085e9;
+      --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
     }
   }
   :root[data-theme="dark"] {
@@ -38,7 +38,7 @@
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
     --good:#0ca30c; --critical:#d03b3b;
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-    --s5:#d55181; --s6:#008300; --s7:#9085e9;
+    --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
       }
 
   body {
@@ -156,7 +156,7 @@
 
   <section class="card">
     <h2>유입경로별 구성</h2>
-    <p class="note">코드가 붙은 경로는 이름 기준으로 묶었습니다. 막대에 커서를 올리면 상세가 나옵니다.</p>
+    <p class="note">상위 7개 경로 + 그 외. 코드가 붙은 경로는 이름 기준으로 묶었습니다. 막대에 커서를 올리면 상세가 나옵니다.</p>
     <ul class="legend" id="legend-stack"></ul>
     <div class="plot" id="plot-stack"><div class="tip" id="tip-stack"></div></div>
   </section>
@@ -189,10 +189,12 @@ const FOLD = "그 외";
 // 원본 값은 그대로 들고 있다가 펼쳐볼 때 보여준다.
 const groupOf = (ch) => (ch.split("(")[0].trim() || ch);
 let EXPANDED = new Set();
-const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7"];
-const TOP_N = 6;
+const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
+const TOP_N = 7;   // + 그 외 = 최대 8계열. 색으로 구분되는 상한이다.
 
-let DATA = SAMPLE, IS_SAMPLE = true, GRAIN = "day";
+const EMBEDDED = /*__DATA__*/null/*__END__*/;
+
+let DATA = EMBEDDED || SAMPLE, IS_SAMPLE = !EMBEDDED, GRAIN = "day";
 
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt = (n) => n.toLocaleString("ko-KR");
@@ -560,7 +562,7 @@ function drawKpis(agg) {
 
   const grand = agg.totals.reduce((s, t) => s + t.value, 0);
   const avg = days.length ? Math.round(grand / days.length) : 0;
-  const topCh = agg.totals[0];
+  const topCh = agg.totals.find(t => t.name !== FOLD) || agg.totals[0];
   const share = grand ? Math.round((topCh.value / grand) * 100) : 0;
 
   const deltaHtml = diff == null ? '<div class="delta">비교할 전일 없음</div>'
@@ -632,8 +634,8 @@ function render() {
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
   el("foot").textContent = IS_SAMPLE
-    ? "지금 보이는 숫자는 화면 구성을 확인하기 위한 샘플입니다. data.json 이 옆에 있으면 실제 데이터로 바뀝니다."
-    : "CRM4 통합고객목록에서 수집한 데이터입니다.";
+    ? "지금 보이는 숫자는 화면 구성을 확인하기 위한 샘플입니다."
+    : "CRM4 통합고객목록에서 수집한 데이터입니다. 협력점해피콜은 제외했습니다.";
 }
 
 document.querySelectorAll(".seg button").forEach(btn => {
@@ -652,10 +654,14 @@ addEventListener("resize", () => {
 });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(render, 60));
 
-// 옆에 data.json 이 있으면 실제 데이터로, 없으면 샘플로 그린다.
-fetch("./data.json", { cache: "no-store" })
-  .then(r => r.ok ? r.json() : Promise.reject())
-  .then(j => { if (j && Array.isArray(j.rows) && j.rows.length) { DATA = j; IS_SAMPLE = false; } })
-  .catch(() => {})
-  .finally(render);
+// 데이터가 파일 안에 박혀 있으면 그대로 그린다. 없을 때만(=미리보기) 옆의 data.json 을 찾아본다.
+if (EMBEDDED) {
+  render();
+} else {
+  fetch("./data.json", { cache: "no-store" })
+    .then(r => r.ok ? r.json() : Promise.reject())
+    .then(j => { if (j && Array.isArray(j.rows) && j.rows.length) { DATA = j; IS_SAMPLE = false; } })
+    .catch(() => {})
+    .finally(render);
+}
 </script>
