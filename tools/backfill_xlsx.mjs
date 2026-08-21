@@ -8,22 +8,30 @@
  *
  * 사용:
  *   node backfill_xlsx.mjs --xlsx <파일.xlsx> --store <store.json> [--year 2026] [--dry]
+ *   node backfill_xlsx.mjs --xlsx <파일.xlsx> --audit    원본 값이 어떻게 처리되는지만 본다
  */
 
 import fs from "node:fs";
 import zlib from "node:zlib";
 
 // aggregate.mjs 와 같은 규칙이어야 한다. 한쪽만 바꾸면 과거분과 앞으로분의 기준이 어긋난다.
-const EXCLUDE = ["협력점해피콜", "고객관리", "아웃"];
-const UNSET = "미지정";
+const EXCLUDE = [
+  "협력점해피콜", "해피콜",              // 신규 인입이 아님
+  "고객관리",                            // 내부 유입
+  "아웃",                                // 아웃바운드 콜 (인입방식이 기존가입고객)
+  "우성종합통신", "휴본",                // 협력점
+  "끝판왕", "소개/끝판왕",               // 협력점
+];
+
 
 // ── 인자 ───────────────────────────────────────────────
 
 function parseArgs(argv) {
-  const out = { dry: false, year: "2026" };
+  const out = { dry: false, audit: false, year: "2026" };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry") out.dry = true;
+    else if (a === "--audit") out.audit = true;
     else if (a.startsWith("--")) out[a.slice(2)] = argv[++i];
   }
   return out;
@@ -155,6 +163,8 @@ function resolveDate(rows, sheetName, fallbackYear) {
 // ── 유입경로 ───────────────────────────────────────────
 
 const CODE_RE = /\(\d{3,5}\)/;
+// 유입경로 칸에 전화번호가 들어간 건. 어디서 들어왔는지 알 수 없어 세지 않는다.
+const PHONE_RE = /^\d{2,4}-\d{3,4}-\d{4}$/;
 
 /** 헤더가 없으므로 괄호 코드가 붙는 비율이 가장 높은 열을 유입경로로 본다. */
 function findChannelColumn(rows) {
@@ -197,7 +207,7 @@ function mergeStore(store, counts) {
 // ── 실행 ───────────────────────────────────────────────
 
 const args = parseArgs(process.argv.slice(2));
-for (const need of ["xlsx", "store"]) {
+for (const need of args.audit ? ["xlsx"] : ["xlsx", "store"]) {
   if (!args[need]) { console.error(`--${need} 를 지정하세요.`); process.exit(1); }
 }
 
@@ -212,7 +222,8 @@ const sheets = [...read("xl/workbook.xml")
 
 console.log(`시트 ${sheets.length}개`);
 
-const store = loadStore(args.store);
+const AUDIT = new Map();
+const store = args.audit ? { rows: [] } : loadStore(args.store);
 const all = [];
 let warned = 0;
 
@@ -233,9 +244,15 @@ for (const sh of sheets) {
   let dropped = 0;
   for (const r of rows) {
     const raw = (r[col] ?? "").trim();
-    if (EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
-    const ch = raw || UNSET;
-    tally.set(ch, (tally.get(ch) || 0) + 1);
+    if (args.audit) {
+      const why = !raw ? "빈값"
+                : PHONE_RE.test(raw) ? "전화번호"
+                : (EXCLUDE.find(x => raw.startsWith(x)) ? "제외:" + EXCLUDE.find(x => raw.startsWith(x)) : "집계");
+      const k = why + "\t" + (raw || "(비어 있음)") + "\t" + date;
+      AUDIT.set(k, (AUDIT.get(k) || 0) + 1);
+    }
+    if (!raw || PHONE_RE.test(raw) || EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
+    tally.set(raw, (tally.get(raw) || 0) + 1);
   }
 
   const counts = [...tally].map(([channel, count]) => ({ date, channel, count }));
@@ -245,6 +262,32 @@ for (const sh of sheets) {
   const flag = match < 0.8 ? "  ← 등록일 확인 필요" : "";
   if (match < 0.8) warned++;
   console.log(`  ${date}  ${String(kept).padStart(4)}건 (원본 ${rows.length} · 제외 ${dropped}) 열${col} ${Math.round(rate * 100)}%${flag}`);
+}
+
+if (args.audit) {
+  const rows = [...AUDIT].map(([k, n]) => { const [why, raw, date] = k.split("\t"); return { why, raw, date, n }; });
+  const total = rows.reduce((s, r) => s + r.n, 0);
+  const byWhy = new Map();
+  for (const r of rows) byWhy.set(r.why, (byWhy.get(r.why) || 0) + r.n);
+
+  console.log(`\n원본 ${total}건`);
+  for (const [why, n] of [...byWhy].sort((a, b) => b[1] - a[1]))
+    console.log(`  ${String(n).padStart(5)}  ${(n / total * 100).toFixed(1).padStart(5)}%  ${why}`);
+
+  for (const [why] of [...byWhy].sort((a, b) => b[1] - a[1])) {
+    if (why === "집계") continue;
+    console.log(`\n[${why}]`);
+    const byRaw = new Map();
+    for (const r of rows.filter(r => r.why === why)) byRaw.set(r.raw, (byRaw.get(r.raw) || 0) + r.n);
+    for (const [raw, n] of [...byRaw].sort((a, b) => b[1] - a[1]))
+      console.log(`  ${String(n).padStart(5)}  ${raw}`);
+    // 특정 시기에 몰리는지 보이면 입력 방식이 바뀐 것을 알 수 있다.
+    const byDate = new Map();
+    for (const r of rows.filter(r => r.why === why)) byDate.set(r.date, (byDate.get(r.date) || 0) + r.n);
+    const ds = [...byDate].sort();
+    if (ds.length > 1) console.log("  날짜별: " + ds.map(([d, n]) => `${d.slice(5)}:${n}`).join(" "));
+  }
+  process.exit(0);
 }
 
 if (!all.length) { console.error("집계된 데이터가 없습니다."); process.exit(1); }

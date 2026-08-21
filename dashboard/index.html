@@ -17,6 +17,7 @@
     --critical:     #d03b3b;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
     --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
+    --s9:#8c564b; --s10:#17919e;
     --font-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
     --font-num: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   }
@@ -29,6 +30,8 @@
       --good:#0ca30c; --critical:#d03b3b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
       --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+    --s9:#b07d75; --s10:#3ab5c2;
+      --s9:#b07d75; --s10:#3ab5c2;
     }
   }
   :root[data-theme="dark"] {
@@ -58,6 +61,8 @@
   /* 토요일은 근무 형태가 달라 수치가 눈에 띄게 낮다. 한눈에 구분되게 표시한다. */
   tbody tr.sat td:first-child { color: var(--s1); font-weight: 600; }
   tbody tr.sat td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
+  tbody tr.hol td:first-child { color: var(--critical); font-weight: 600; }
+  tbody tr.hol td { background: color-mix(in srgb, var(--critical) 6%, transparent); }
   td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
 
   body {
@@ -139,6 +144,20 @@
   th, td { padding: 5px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
   th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface-1); }
   thead th { color: var(--muted); font-weight: 600; }
+  tbody tr.mrow td {
+    background: var(--surface-2); cursor: pointer; user-select: none;
+    font-weight: 600; text-align: left; color: var(--text);
+    position: sticky; left: 0;
+  }
+  tbody tr.mrow td:hover { background: var(--surface-3, var(--surface-2)); }
+  tbody tr.mrow .caret { color: var(--muted); margin-right: 6px; font-size: 10px; }
+  tbody tr.mrow .q { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  thead th.open { cursor: pointer; color: var(--text-secondary); user-select: none; }
+  thead th.open:hover { color: var(--text); }
+  thead th.open .caret { color: var(--muted); font-size: 10px; margin-left: 3px; }
+  th.sub, td.sub { background: var(--surface-2); }
+  thead th.sub { font-weight: 500; }
+  td.sub { color: var(--text-secondary); }
   tbody td { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
   tfoot td { font-weight: 500; font-family: var(--font-num); font-variant-numeric: tabular-nums; border-top: 1px solid var(--axis); }
 
@@ -170,7 +189,7 @@
 
   <section class="card">
     <h2>채널별 인입 수량</h2>
-    <p class="note">가로는 채널, 세로는 기간입니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
+    <p class="note">맨 왼쪽이 그 기간의 합계이고, 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 표가 넓으면 좌우로 밀어서 보세요.</p>
     <div class="tablewrap" id="tablewrap"></div>
   </section>
 
@@ -178,21 +197,17 @@
 
   <section class="card">
     <h2>전체 DB 수량 추이</h2>
-    <p class="note" id="note-trend">협력점해피콜을 제외한 전체 등록 건수</p>
+    <p class="note" id="note-trend"></p>
     <div class="plot" id="plot-trend"><div class="tip" id="tip-trend"></div></div>
   </section>
 
   <section class="card">
     <h2>유입경로별 구성</h2>
-    <p class="note">상위 7개 채널 + 그 외. 막대에 커서를 올리면 채널별 건수가 나옵니다.</p>
+    <p class="note">건수 상위 9개 채널이 제 색을 갖고, 나머지는 <strong>그 외</strong>로 묶입니다.
+      색으로 구분되는 수가 거기까지라서입니다. 위 표에는 모든 채널이 나옵니다.
+      막대에 커서를 올리면 채널별 건수가 나옵니다. 위 표에서 편 달만 그립니다.</p>
     <ul class="legend" id="legend-stack"></ul>
     <div class="plot" id="plot-stack"><div class="tip" id="tip-stack"></div></div>
-  </section>
-
-  <section class="card">
-    <h2>유입경로별 누계</h2>
-    <p class="note" id="note-rank">기간 전체 합계. 코드가 여러 개인 경로는 <strong>눌러서 펼쳐볼 수 있습니다.</strong></p>
-    <div class="plot" id="plot-rank"><div class="tip" id="tip-rank"></div></div>
   </section>
 
   <footer id="foot"></footer>
@@ -222,9 +237,7 @@ const TYPO = new Map([
   ["타인스타그램", "인스타그램"],
   ["소중함인사이트중", "소중함인사이트"],
   ["소중함인사이트함", "소중함인사이트"],
-  ["소개/끝판왕 박선용", "끝판왕"],
-  ["끝판왕 박선화", "끝판왕"],
-  ["010", "미지정"],                     // 유입경로 칸에 전화번호가 들어간 건
+  ["[기타]", "기타(4016)"],              // 코드가 빠진 채 들어간 건
 ]);
 
 // 세부 항목의 열쇠. 'SOOP-PPL(1919)봉준★♨' 와 'SOOP-PPL(1919)봉준' 은 같은 코드이므로 한 줄이다.
@@ -256,8 +269,26 @@ function groupOf(ch) {
   return fixed || ch;
 }
 let EXPANDED = new Set();
-const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
-const TOP_N = 7;   // + 그 외 = 최대 8계열. 색으로 구분되는 상한이다.
+// 달이 쌓이면 표가 길어지므로 지난 달은 접어 둔다. null 이면 아직 정하지 않은 상태다.
+let OPEN_MONTHS = null;
+// 주차별에서는 목요일이 든 달로 센다. 6/29 시작 주가 6월로 잡히면 헷갈린다.
+const monthOf = (b) => (GRAIN === "week" ? shiftDays(b.key, 3) : b.key).slice(0, 7);
+
+// 월별 보기에서는 한 달이 이미 한 줄이라 묶을 것이 없다.
+function monthGroups(agg) {
+  if (GRAIN === "month") return null;
+  const months = [...new Set(agg.buckets.map(monthOf))].sort();
+  if (!OPEN_MONTHS) OPEN_MONTHS = new Set(months.slice(-1));   // 처음에는 이번 달만 편다
+  for (const m of [...OPEN_MONTHS]) if (!months.includes(m)) OPEN_MONTHS.delete(m);
+  if (!OPEN_MONTHS.size && months.length) OPEN_MONTHS.add(months[months.length - 1]);
+  return months;
+}
+function openBuckets(agg) {
+  const months = monthGroups(agg);
+  return months ? agg.buckets.filter(b => OPEN_MONTHS.has(monthOf(b))) : agg.buckets;
+}
+const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8","--s9","--s10"];
+const TOP_N = 9;   // + 그 외 = 10계열. 색으로 구분되는 상한이라 나머지는 묶는다.
 
 const EMBEDDED = /*__DATA__*/null/*__END__*/;
 
@@ -300,8 +331,15 @@ const HOLIDAYS = new Set([
 const dowOf = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
 const isSaturday = (iso) => dowOf(iso) === 6;
 const isRest = (iso) => dowOf(iso) === 0 || dowOf(iso) === 6 || HOLIDAYS.has(iso);
-const restWhy = (iso) => HOLIDAYS.has(iso) ? "공휴일" : dowOf(iso) === 6 ? "토요일"
-                       : dowOf(iso) === 0 ? "일요일" : "";
+// 색은 토요일이 먼저다. 토요일이면서 공휴일인 날도 파랑으로 둔다.
+const toneOf = (iso) => dowOf(iso) === 6 ? "sat"
+                      : (dowOf(iso) === 0 || HOLIDAYS.has(iso)) ? "hol" : "";
+const restWhy = (iso) => {
+  const h = HOLIDAYS.has(iso), d = dowOf(iso);
+  if (d === 6) return h ? "토요일 · 공휴일" : "토요일";
+  if (d === 0) return h ? "일요일 · 공휴일" : "일요일";
+  return h ? "공휴일" : "";
+};
 
 const shiftDays = (iso, n) =>
   new Date(new Date(iso + "T00:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -335,10 +373,13 @@ function aggregate() {
   for (const r of DATA.rows) {
     const g = groupOf(r.channel);
     const k = bucketKey(r.date, GRAIN);
-    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {} });
+    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0 });
     const b = map.get(k);
     b.parts[top.includes(g) ? g : FOLD] += r.count;
     b.all[g] = (b.all[g] || 0) + r.count;
+    const dk = detailKeyOf(r.channel);
+    b.sub[dk] = (b.sub[dk] || 0) + r.count;
+    if (!isRest(r.date)) b.work = (b.work || 0) + r.count;
     allTotals.set(g, (allTotals.get(g) || 0) + r.count);
   }
 
@@ -346,8 +387,9 @@ function aggregate() {
   const buckets = keys.map(k => {
     const b = map.get(k);
     return {
-      key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all,
+      key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all, sub: b.sub, work: b.work || 0,
       rest: GRAIN === "day" && isRest(k),
+      tone: GRAIN === "day" ? toneOf(k) : "",
       why: GRAIN === "day" ? restWhy(k) : "",
       total: names.reduce((s, n) => s + b.parts[n], 0),
     };
@@ -359,14 +401,14 @@ function aggregate() {
   const totals = names.map(n => ({ name: n, value: buckets.reduce((s, b) => s + b.parts[n], 0) }))
                       .sort((a, b) => b.value - a.value);
 
+  // 표에서 채널 이름을 누르면 코드별로 펼치므로, 묶음마다 세부 목록을 미리 만든다.
   const detail = new Map();
   for (const r of DATA.rows) {
     const g = groupOf(r.channel);
-    const key = top.includes(g) ? g : FOLD;
-    if (!detail.has(key)) detail.set(key, new Map());
-    const m = detail.get(key);
-    const sub = detailKeyOf(r.channel);
-    m.set(sub, (m.get(sub) || 0) + r.count);
+    if (!detail.has(g)) detail.set(g, new Map());
+    const m = detail.get(g);
+    const key = detailKeyOf(r.channel);
+    m.set(key, (m.get(key) || 0) + r.count);
   }
   for (const [k, m] of detail)
     detail.set(k, [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
@@ -434,7 +476,10 @@ function drawTrend(agg) {
   const W = Math.max(host.clientWidth, 320), H = 260;
   const m = { t: 14, r: 16, b: 30, l: 44 };
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
-  const pts = agg.buckets;
+  // 토·일·공휴일은 인입이 평일의 1/3 수준이라 섞으면 추세가 톱니처럼 보인다.
+  // 일자별에서는 그 날을 아예 빼고, 주·월별에서는 합계에서 뺀 값을 쓴다.
+  const pts = agg.buckets.filter(b => !(GRAIN === "day" && b.rest))
+                         .map(b => ({ ...b, total: b.work }));
   if (!pts.length) return;
 
   const max = Math.max(...pts.map(b => b.total), 1);
@@ -505,7 +550,7 @@ function drawStack(agg) {
   const host = el("plot-stack"), tip = el("tip-stack");
   host.querySelectorAll("svg").forEach(n => n.remove());
 
-  const pts = agg.buckets;
+  const pts = openBuckets(agg);
   if (!pts.length) return;
 
   const colors = colorOf(agg.names);
@@ -534,7 +579,10 @@ function drawStack(agg) {
 
     const lb = svgEl("text", { class: "tick", x: m.l - 10, y: y + h / 2 + 4, "text-anchor": "end" });
     lb.textContent = b.label;
-    if (b.rest) { lb.setAttribute("fill", cssVar("--s1")); lb.setAttribute("font-weight", "600"); }
+    if (b.tone) {
+      lb.setAttribute("fill", cssVar(b.tone === "sat" ? "--s1" : "--critical"));
+      lb.setAttribute("font-weight", "600");
+    }
     svg.appendChild(lb);
 
     // 왼쪽부터 쌓고, 조각 사이에 2px 면색 간격을 둬 경계를 분리한다.
@@ -568,95 +616,6 @@ function drawStack(agg) {
   host.appendChild(svg);
 }
 
-// ── 경로별 누계 (가로 막대, 눌러서 코드별로 펼침) ────────────
-function drawRank(agg) {
-  const host = el("plot-rank"), tip = el("tip-rank");
-  const colors = colorOf(agg.names);
-  host.querySelectorAll("svg").forEach(n => n.remove());
-
-  const groups = agg.totals.filter(r => r.value > 0);
-  if (!groups.length) return;
-
-  // 펼친 묶음은 그 아래에 코드별 줄을 끼워 넣는다. 코드가 하나뿐이면 펼칠 게 없다.
-  const lines = [];
-  for (const g of groups) {
-    const subs = (agg.detail.get(g.name) || []).filter(s => s.value > 0);
-    const openable = subs.length > 1;
-    const open = openable && EXPANDED.has(g.name);
-    lines.push({ ...g, kind: "group", openable, open });
-    if (open) for (const s of subs) lines.push({ ...s, kind: "sub", parent: g.name });
-  }
-
-  const W = Math.max(host.clientWidth, 320);
-  const rowH = 30, m = { t: 6, r: 54, b: 6, l: 168 };
-  const H = m.t + m.b + lines.length * rowH;
-  const iw = W - m.l - m.r;
-  const max = Math.max(...groups.map(r => r.value));
-
-  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
-    "aria-label": "유입경로별 누계. 경로를 누르면 코드별로 펼쳐집니다." });
-
-  lines.forEach((r, i) => {
-    const isSub = r.kind === "sub";
-    const y = m.t + i * rowH + (isSub ? 8 : 5);
-    const h = rowH - (isSub ? 18 : 12);
-    const w = (r.value / max) * iw;
-    const color = colors.get(isSub ? r.parent : r.name);
-
-    const g = svgEl("g", isSub ? {} : { role: "button", tabindex: 0,
-      "aria-expanded": String(!!r.open), style: r.openable ? "cursor:pointer" : "" });
-
-    if (!isSub && r.openable) {
-      const car = svgEl("text", { class: "tick", x: m.l - 10, y: y + h / 2 + 4, "text-anchor": "end" });
-      car.textContent = r.open ? "▾" : "▸";
-      g.appendChild(car);
-    }
-
-    const nm = svgEl("text", {
-      class: isSub ? "tick" : "dlabel",
-      x: m.l - (isSub ? 10 : 24), y: y + h / 2 + 4, "text-anchor": "end",
-      "font-family": isSub ? "var(--font-num)" : "var(--font-ui)" });
-    nm.textContent = isSub ? r.name : r.name;
-    g.appendChild(nm);
-
-    const bar = svgEl("path", { d: barPathH(m.l, y, w, h, 4),
-      fill: color, "fill-opacity": isSub ? 0.45 : 1 });
-    g.appendChild(bar);
-
-    const vl = svgEl("text", { class: "dlabel", x: m.l + w + 8, y: y + h / 2 + 4,
-      "font-weight": isSub ? 400 : 500 });
-    vl.textContent = fmt(r.value);
-    g.appendChild(vl);
-
-    const hit = svgEl("rect", { x: 0, y: m.t + i * rowH, width: W, height: rowH, fill: "transparent" });
-    hit.addEventListener("mousemove", () => {
-      const rect = svg.getBoundingClientRect();
-      const extra = (!isSub && r.openable)
-        ? `<div class="t-row"><span class="nm">${r.open ? "접기" : "눌러서 코드별로 보기"}</span></div>` : "";
-      showTip(tip, host, (m.l + w) * (rect.width / W), ((m.t + i * rowH) * (rect.height / H)) - 12,
-        `<div class="t-head">${r.name}</div>
-         <div class="t-row"><span class="nm">누계</span><span class="vl">${fmt(r.value)}건</span></div>${extra}`);
-    });
-    hit.addEventListener("mouseleave", () => hideTip(tip));
-    g.appendChild(hit);
-
-    if (!isSub && r.openable) {
-      const toggle = () => {
-        EXPANDED.has(r.name) ? EXPANDED.delete(r.name) : EXPANDED.add(r.name);
-        hideTip(tip);
-        drawRank(agg);
-      };
-      g.addEventListener("click", toggle);
-      g.addEventListener("keydown", (ev) => {
-        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
-      });
-    }
-
-    svg.appendChild(g);
-  });
-
-  host.appendChild(svg);
-}
 </script>
 
 <script>
@@ -704,8 +663,9 @@ function drawKpis(agg) {
   const pmFrom = `${pmY}-${pad(pmM)}-01`, pmTo = `${pmY}-${pad(pmM)}-${pad(pmEndDay)}`;
   const mPrev = hasRange(pmFrom, pmTo) ? sumRange(pmFrom, pmTo) : null;
 
-  // 평균은 영업일만 센다. 토·일·공휴일을 섞으면 평일 수준이 실제보다 낮게 보인다.
-  const workDays = days.filter(d => !isRest(d));
+  // 평균은 이번 달 영업일만 센다. 토·일·공휴일을 섞으면 평일 수준이 실제보다 낮게 보이고,
+  // 지난달까지 함께 평균 내면 이번 달이 어떤지가 묻힌다.
+  const workDays = days.filter(d => d >= mFrom && d <= lastDay && !isRest(d));
   const workSum = workDays.reduce((s, d) => s + byDay.get(d), 0);
   const avg = workDays.length ? Math.round(workSum / workDays.length) : 0;
 
@@ -738,7 +698,7 @@ function drawKpis(agg) {
       ${delta(mCur, mPrev, `전월 같은 구간(${pmM}/1~${pmM}/${pmEndDay})`)}
     </div>
     <div class="kpi">
-      <div class="label">영업일 평균</div>
+      <div class="label">${mm}월 영업일 평균</div>
       <div class="value">${fmt(avg)}<span class="unit">건</span></div>
       <div class="delta">영업일 ${workDays.length}일 · 토·일·공휴일 제외</div>
     </div>
@@ -755,29 +715,95 @@ function drawLegend(agg) {
 }
 
 function drawTable(agg) {
-  const cols = agg.allNames;
-  const head = `<tr><th>${GRAIN === "day" ? "날짜" : GRAIN === "week" ? "주차" : "월"}</th>` +
-    cols.map(n => `<th>${n}</th>`).join("") + `<th class="sum">합계</th></tr>`;
-  const body = agg.buckets.map(b => {
-    const t = cols.reduce((s, n) => s + (b.all[n] || 0), 0);
-    return `<tr${b.rest ? ' class="sat"' : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
-      cols.map(n => `<td>${b.all[n] ? fmt(b.all[n]) : "<span class=\"zero\">–</span>"}</td>`).join("") +
-      `<td class="sum">${fmt(t)}</td></tr>`;
-  }).join("");
+  const grain = GRAIN === "day" ? "날짜" : GRAIN === "week" ? "주차" : "월";
+
+  // 펼친 채널은 그 자리를 코드별 열로 바꾼다. 코드가 하나뿐이면 펼칠 게 없다.
+  const cols = [];
+  for (const n of agg.allNames) {
+    const subs = (agg.detail.get(n) || []).filter(s => s.value > 0);
+    const openable = subs.length > 1;
+    const open = openable && EXPANDED.has(n);
+    cols.push({ key: n, label: n, openable, open });
+    if (open) for (const s of subs) cols.push({ key: s.name, label: s.name, isSub: true });
+  }
+
+  const cell = (b, c) => c.isSub ? (b.sub[c.key] || 0) : (b.all[c.key] || 0);
+  // 합계는 묶음 기준으로만 센다. 펼친 열까지 더하면 두 번 세어진다.
+  const rowTotal = (b) => agg.allNames.reduce((s, n) => s + (b.all[n] || 0), 0);
+
+  const head = `<tr><th>${grain}</th><th class="sum">합계</th>` + cols.map(c => {
+    if (c.isSub) return `<th class="sub">${c.label}</th>`;
+    if (!c.openable) return `<th>${c.label}</th>`;
+    return `<th class="open" role="button" tabindex="0" aria-expanded="${c.open}"` +
+           ` data-ch="${c.key.replace(/"/g, "&quot;")}" title="눌러서 코드별로 보기">` +
+           `${c.label}<span class="caret">${c.open ? "▾" : "▸"}</span></th>`;
+  }).join("") + `</tr>`;
+
+  const rowHtml = (b) =>
+    `<tr${b.tone ? ` class="${b.tone}"` : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
+    `<td class="sum">${fmt(rowTotal(b))}</td>` +
+    cols.map(c => {
+      const v = cell(b, c);
+      return `<td${c.isSub ? ' class="sub"' : ""}>${v ? fmt(v) : '<span class="zero">–</span>'}</td>`;
+    }).join("") + `</tr>`;
+
+  const months = monthGroups(agg);
+  const unit = GRAIN === "week" ? "주" : "일";
+  const body = !months
+    ? agg.buckets.map(rowHtml).join("")
+    : months.map(m => {
+        const rows = agg.buckets.filter(b => monthOf(b) === m);
+        const open = OPEN_MONTHS.has(m);
+        const sum = rows.reduce((s, b) => s + rowTotal(b), 0);
+        return `<tr class="mrow"><td colspan="${cols.length + 2}" role="button" tabindex="0"` +
+               ` data-m="${m}" aria-expanded="${open}">` +
+               `<span class="caret">${open ? "▾" : "▸"}</span>${+m.slice(5)}월` +
+               ` <span class="q">${rows.length}${unit} · ${fmt(sum)}건</span></td></tr>` +
+               (open ? rows.map(rowHtml).join("") : "");
+      }).join("");
+
   const foot = `<tr><td>합계</td>` +
-    cols.map(n => `<td>${fmt(agg.buckets.reduce((s, b) => s + (b.all[n] || 0), 0))}</td>`).join("") +
-    `<td class="sum">${fmt(agg.buckets.reduce((s, b) => s + cols.reduce((x, n) => x + (b.all[n] || 0), 0), 0))}</td></tr>`;
+    `<td class="sum">${fmt(agg.buckets.reduce((s, b) => s + rowTotal(b), 0))}</td>` +
+    cols.map(c => {
+      const v = agg.buckets.reduce((s, b) => s + cell(b, c), 0);
+      return `<td${c.isSub ? ' class="sub"' : ""}>${fmt(v)}</td>`;
+    }).join("") + `</tr>`;
+
   el("tablewrap").innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
 
-}
+  el("tablewrap").querySelectorAll("td[data-m]").forEach(td => {
+    const m = td.dataset.m;
+    const toggle = () => {
+      OPEN_MONTHS.has(m) ? OPEN_MONTHS.delete(m) : OPEN_MONTHS.add(m);
+      if (!OPEN_MONTHS.size) OPEN_MONTHS.add(m);      // 전부 접으면 볼 것이 없다
+      render();
+    };
+    td.addEventListener("click", toggle);
+    td.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
+    });
+  });
 
+  el("tablewrap").querySelectorAll("th.open").forEach(th => {
+    const name = th.dataset.ch;
+    const toggle = () => {
+      EXPANDED.has(name) ? EXPANDED.delete(name) : EXPANDED.add(name);
+      const left = el("tablewrap").scrollLeft;
+      drawTable(agg);
+      el("tablewrap").scrollLeft = left;      // 펼쳐도 보던 자리를 지킨다
+    };
+    th.addEventListener("click", toggle);
+    th.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
+    });
+  });
+}
 function render() {
   const agg = aggregate();
   drawKpis(agg);
   drawLegend(agg);
   drawTrend(agg);
   drawStack(agg);
-  drawRank(agg);
   drawTable(agg);
 
   const days = [...new Set(DATA.rows.map(r => r.date))].sort();
@@ -785,10 +811,18 @@ function render() {
   el("sub").textContent =
     `${days[0]} ~ ${days[days.length - 1]} · ${days.length}일 · 누계 ${fmt(grand)}건` +
     ` · 마지막 갱신 ${(DATA.generated || "").replace("T", " ").slice(0, 16)}`;
-  el("chip-excl").textContent = (DATA.excluded || []).length
-    ? `${DATA.excluded.join(", ")} 제외` : "제외 항목 없음";
+  const ex = DATA.excluded || [];
+  el("chip-excl").textContent = !ex.length ? "제외 항목 없음"
+    : ex.length <= 3 ? `${ex.join(", ")} 제외`
+    : `${ex.slice(0, 2).join(", ")} 외 ${ex.length - 2}개 제외`;
+  el("chip-excl").title = ex.length ? ex.join(", ") : "";
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
+  const restDays = days.filter(isRest).length;
+  el("note-trend").textContent = restDays
+    ? `영업일만 표시합니다. 토·일·공휴일 ${restDays}일은 뺐습니다.`
+    : "전체 등록 건수";
+
   el("foot").textContent = IS_SAMPLE
     ? "지금 보이는 숫자는 화면 구성을 확인하기 위한 샘플입니다."
     : "CRM4 통합고객목록에서 수집한 데이터입니다. 협력점해피콜은 제외했습니다.";
