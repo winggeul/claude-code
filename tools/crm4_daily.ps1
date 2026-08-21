@@ -53,6 +53,11 @@ $VercelToken = $env:VERCEL_TOKEN
 $ErrorActionPreference = "Stop"
 $log = New-Object System.Collections.Generic.List[string]
 
+# 로그는 여기 한 곳에만 쌓는다. 수집기도 같은 파일에 이어 쓴다.
+$LogDir = Join-Path $Base "logs"
+New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+$LogFile = Join-Path $LogDir ("run_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+
 function Say([string]$msg, [string]$color = "Gray") {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $msg
     Write-Host $line -ForegroundColor $color
@@ -61,8 +66,8 @@ function Say([string]$msg, [string]$color = "Gray") {
 
 function Fail([string]$msg) {
     Say $msg "Red"
-    $logPath = Join-Path $Base ("log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
-    $log | Out-File $logPath -Encoding utf8
+    $log | Out-File $LogFile -Encoding utf8 -Append
+    Write-Host "로그: $LogFile"
     exit 1
 }
 
@@ -81,7 +86,8 @@ if ($SkipCollect) {
 } else {
     if (-not (Test-Path $Collect)) { Fail "파일이 없습니다: $Collect" }
 
-    $collectArgs = @("-ExecutionPolicy", "Bypass", "-File", $Collect, "-RawRoot", $RawRoot, "-End", $End.ToString("yyyy-MM-dd"))
+    $collectArgs = @("-ExecutionPolicy", "Bypass", "-File", $Collect, "-RawRoot", $RawRoot,
+                     "-LogFile", $LogFile, "-End", $End.ToString("yyyy-MM-dd"))
     if ($PSBoundParameters.ContainsKey("Start")) { $collectArgs += @("-Start", $Start.ToString("yyyy-MM-dd")) }
 
     Say "수집 시작" "Cyan"
@@ -119,4 +125,5 @@ if ($SkipDeploy) {
 }
 
 Say "=== 끝 ===" "Cyan"
-$log | Out-File (Join-Path $Base ("log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")) -Encoding utf8
+$log | Out-File $LogFile -Encoding utf8 -Append
+Write-Host "로그: $LogFile"

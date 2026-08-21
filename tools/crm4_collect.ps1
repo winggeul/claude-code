@@ -34,6 +34,9 @@ param(
     # 목록 탭의 전체선택을 누르지 않는다.
     [switch]$SkipSelectAll,
 
+    # 로그를 남길 파일. 주지 않으면 스크립트 옆 logs 폴더에 만든다.
+    [string]$LogFile,
+
     # 단계 사이 기본 대기(초). 서버가 느리면 늘린다.
     [int]$Wait = 2
 )
@@ -504,6 +507,15 @@ while ($day -le $End.Date) {
 }
 
 Write-Log "끝. 성공 $ok / 0건 $empty / 실패 $failed" "Cyan"
-$logPath = Join-Path $RawRoot ("log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
-$script:Log | Out-File $logPath -Encoding utf8
+
+# 원본 폴더에는 CSV 만 둔다. 로그가 섞이면 집계 대상과 구분이 안 된다.
+if ($LogFile) {
+    $logPath = $LogFile
+} else {
+    $logDir = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "logs"
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    $logPath = Join-Path $logDir ("collect_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+}
+New-Item -ItemType Directory -Path (Split-Path -Parent $logPath) -Force | Out-Null
+$script:Log | Out-File $logPath -Encoding utf8 -Append
 Write-Host "로그: $logPath"
