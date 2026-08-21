@@ -189,7 +189,7 @@
 
   <section class="card">
     <h2>채널별 인입 수량</h2>
-    <p class="note">맨 왼쪽이 그 기간의 합계이고, 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 표가 넓으면 좌우로 밀어서 보세요.</p>
+    <p class="note">맨 왼쪽이 그 기간의 합계이고, 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 펼친 기간에 건이 없는 채널은 열에서 빠집니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
     <div class="tablewrap" id="tablewrap"></div>
   </section>
 
@@ -715,18 +715,27 @@ function drawKpis(agg) {
     </div>`;
 }
 function drawLegend(agg) {
-  const colors = colorOf(agg.names);
-  el("legend-stack").innerHTML = agg.names.map(n =>
-    `<li><span class="swatch" style="background:${colors.get(n)}"></span>${n}</li>`).join("");
+  const colors = colorOf(agg.names);          // 색은 기간 전체 기준이라 접었다 펴도 바뀌지 않는다
+  const shown = openBuckets(agg);
+  el("legend-stack").innerHTML = agg.names
+    .filter(n => shown.some(b => b.parts[n] > 0))
+    .map(n => `<li><span class="swatch" style="background:${colors.get(n)}"></span>${n}</li>`).join("");
 }
 
 function drawTable(agg) {
   const grain = GRAIN === "day" ? "날짜" : GRAIN === "week" ? "주차" : "월";
 
+  // 지금 펼쳐 놓은 기간에 한 건도 없는 채널은 열을 만들지 않는다.
+  // 외부DB 처럼 도중에 끊긴 채널이 빈 열로 계속 남으면 표만 넓어진다.
+  const shown = openBuckets(agg);
+  const live = agg.allNames.filter(n => shown.some(b => (b.all[n] || 0) > 0));
+
   // 펼친 채널은 그 자리를 코드별 열로 바꾼다. 코드가 하나뿐이면 펼칠 게 없다.
   const cols = [];
-  for (const n of agg.allNames) {
-    const subs = (agg.detail.get(n) || []).filter(s => s.value > 0);
+  for (const n of live) {
+    // 세부도 지금 보이는 기간에 건이 있는 코드만 남긴다.
+    const subs = (agg.detail.get(n) || [])
+      .filter(s => shown.some(b => (b.sub[s.name] || 0) > 0));
     const openable = subs.length > 1;
     const open = openable && EXPANDED.has(n);
     cols.push({ key: n, label: n, openable, open });
@@ -736,6 +745,7 @@ function drawTable(agg) {
   const cell = (b, c) => c.isSub ? (b.sub[c.key] || 0) : (b.all[c.key] || 0);
   // 합계는 묶음 기준으로만 센다. 펼친 열까지 더하면 두 번 세어진다.
   const rowTotal = (b) => agg.allNames.reduce((s, n) => s + (b.all[n] || 0), 0);
+  const grandTotal = shown.reduce((s, b) => s + rowTotal(b), 0);
 
   const head = `<tr><th>${grain}</th><th class="sum">합계</th>` + cols.map(c => {
     if (c.isSub) return `<th class="sub">${c.label}</th>`;
@@ -769,9 +779,9 @@ function drawTable(agg) {
       }).join("");
 
   const foot = `<tr><td>합계</td>` +
-    `<td class="sum">${fmt(agg.buckets.reduce((s, b) => s + rowTotal(b), 0))}</td>` +
+    `<td class="sum">${fmt(grandTotal)}</td>` +
     cols.map(c => {
-      const v = agg.buckets.reduce((s, b) => s + cell(b, c), 0);
+      const v = shown.reduce((s, b) => s + cell(b, c), 0);
       return `<td${c.isSub ? ' class="sub"' : ""}>${fmt(v)}</td>`;
     }).join("") + `</tr>`;
 
