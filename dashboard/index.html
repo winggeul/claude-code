@@ -122,6 +122,10 @@
 
   .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 0 0 10px; padding: 0; list-style: none; }
   .legend li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
+  .legendwrap { position: relative; }
+  .legend li { cursor: help; padding: 2px 4px; border-radius: 5px; margin: -2px -4px; }
+  .legend li:hover { background: var(--surface-2); color: var(--text); }
+  .t-row.dim .nm, .t-row.dim .vl { color: var(--muted); }
   .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
   .plot { position: relative; overflow-x: auto; }
@@ -220,7 +224,10 @@
     <p class="note">건수 상위 11개 채널이 제 색을 갖고, 나머지는 <strong>그 외</strong>로 묶입니다.
       색으로 구분되는 수가 거기까지라서입니다. 위 표에는 모든 채널이 나옵니다.
       막대에 커서를 올리면 채널별 건수가 나옵니다. 위 표에서 편 달만 그립니다.</p>
-    <ul class="legend" id="legend-stack"></ul>
+    <div class="legendwrap">
+      <ul class="legend" id="legend-stack"></ul>
+      <div class="tip" id="tip-legend"></div>
+    </div>
     <div class="plot" id="plot-stack"><div class="tip" id="tip-stack"></div></div>
   </section>
 
@@ -774,9 +781,47 @@ function drawKpis(agg) {
 function drawLegend(agg) {
   const colors = colorOf(agg.names);          // 색은 기간 전체 기준이라 접었다 펴도 바뀌지 않는다
   const shown = openBuckets(agg);
-  el("legend-stack").innerHTML = agg.names
-    .filter(n => shown.some(b => b.parts[n] > 0))
-    .map(n => `<li><span class="swatch" style="background:${colors.get(n)}"></span>${n}</li>`).join("");
+  const live = agg.names.filter(n => shown.some(b => b.parts[n] > 0));
+  const grand = live.reduce((s, n) => s + shown.reduce((t, b) => t + b.parts[n], 0), 0);
+
+  // '그 외' 는 색이 모자라 묶인 것이라, 안에 무엇이 들었는지가 곧 상세다.
+  const folded = agg.allNames.filter(n => !agg.names.includes(n));
+
+  const rowsFor = (n) => {
+    if (n === FOLD) {
+      return folded.map(g => ({ name: g, value: shown.reduce((t, b) => t + (b.all[g] || 0), 0) }))
+                   .filter(r => r.value > 0).sort((a, b) => b.value - a.value);
+    }
+    return (agg.detail.get(n) || [])
+      .map(d => ({ name: d.name, value: shown.reduce((t, b) => t + (b.sub[d.key] || 0), 0) }))
+      .filter(r => r.value > 0).sort((a, b) => b.value - a.value);
+  };
+
+  el("legend-stack").innerHTML = live.map((n, i) =>
+    `<li data-i="${i}"><span class="swatch" style="background:${colors.get(n)}"></span>${n}</li>`).join("");
+
+  const host = document.querySelector(".legendwrap"), tip = el("tip-legend");
+  el("legend-stack").querySelectorAll("li").forEach(li => {
+    const n = live[+li.dataset.i];
+    li.addEventListener("mouseenter", () => {
+      const total = shown.reduce((t, b) => t + b.parts[n], 0);
+      const share = grand ? Math.round((total / grand) * 100) : 0;
+      const all = rowsFor(n);
+      const cut = all.slice(0, 12);
+      const rest = all.length - cut.length;
+      const label = n === FOLD ? "묶인 채널" : "코드별";
+      const body = cut.length > 1 || n === FOLD
+        ? `<div class="t-row dim"><span class="nm">${label}</span></div>` +
+          cut.map(r => `<div class="t-row"><span class="nm">${r.name}</span><span class="vl">${fmt(r.value)}</span></div>`).join("") +
+          (rest > 0 ? `<div class="t-row dim"><span class="nm">외 ${rest}개</span></div>` : "")
+        : "";
+      const r = li.getBoundingClientRect(), h = host.getBoundingClientRect();
+      showTip(tip, host, r.left - h.left + r.width / 2, r.bottom - h.top + 6,
+        `<div class="t-head"><span class="swatch" style="background:${colors.get(n)}"></span>${n}</div>
+         <div class="t-row"><span class="nm">누계</span><span class="vl">${fmt(total)}건 · ${share}%</span></div>${body}`);
+    });
+    li.addEventListener("mouseleave", () => hideTip(tip));
+  });
 }
 
 function drawTable(agg) {
