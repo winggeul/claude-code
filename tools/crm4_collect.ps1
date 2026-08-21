@@ -387,8 +387,8 @@ if (-not $SkipDateCheck) {
 }
 
 $ok = 0; $empty = 0; $failed = 0
-$script:Retried = 0
-$script:DateMode = 1
+$script:DateMode = 2      # 이 프로그램은 칸이 차도 다음 칸으로 넘어가지 않는다. 칸 이동을 직접 준다.
+
 $day = $Start.Date
 
 while ($day -le $End.Date) {
@@ -399,118 +399,105 @@ while ($day -le $End.Date) {
         Write-Log "$stamp 이미 있음, 건너뜀"
         $day = $day.AddDays(1); continue
     }
-    if ($Force -and (Test-Path $dest)) { Remove-Item $dest -Force }
+    if (Test-Path $dest) { Remove-Item $dest -Force }
 
-    try {
-        if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
-            throw "CRM4enterprise 가 종료되었습니다."
-        }
-        [void][C4]::SetForegroundWindow($win)
-        Start-Sleep -Milliseconds 400
+    # 한 날짜를 최대 세 번까지 시도한다. 실패할 때마다 조건을 하나씩 바꿔 본다.
+    $done = $false
+    for ($try = 1; $try -le 3 -and -not $done; $try++) {
+        try {
+            if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
+                throw "CRM4enterprise 가 종료되었습니다."
+            }
+            [void][C4]::SetForegroundWindow($win)
+            Start-Sleep -Milliseconds 400
 
-        $c = Switch-Tab $win "Filter"
-        Set-DatePicker (Need $c "DateFrom") $day "시작일" $script:DateMode
-        Set-DatePicker (Need $c "DateTo") $day "종료일" $script:DateMode
+            $c = Switch-Tab $win "Filter"
+            Set-DatePicker (Need $c "DateFrom") $day "시작일" $script:DateMode
+            Set-DatePicker (Need $c "DateTo") $day "종료일" $script:DateMode
 
-        Click-Ctrl (Need $c "Search")
-        $count = Wait-Search $win
+            Click-Ctrl (Need $c "Search")
+            $count = Wait-Search $win
 
-        if ($count -eq 0) {
-            Write-Log "$stamp 0 건, 저장 생략"
-            $empty++; $day = $day.AddDays(1); continue
-        }
-        Write-Log "$stamp 조회 $count 건" "White"
+            if ($count -eq 0) {
+                Write-Log "$stamp 0 건, 저장 생략"
+                $empty++; $done = $true; break
+            }
+            Write-Log "$stamp 조회 $count 건" "White"
 
-        if (-not $SkipSelectAll) {
-            $c = Switch-Tab $win "List"
-            Click-Ctrl (Need $c "SelectAll")
-        }
+            if (-not $SkipSelectAll) {
+                $c = Switch-Tab $win "List"
+                Click-Ctrl (Need $c "SelectAll")
+            }
 
-        $c = Switch-Tab $win "Process"
-        $started = Get-Date
-        Click-Ctrl (Need $c "Excel")
-        Start-Sleep -Seconds $Wait
+            $c = Switch-Tab $win "Process"
+            $started = Get-Date
+            Click-Ctrl (Need $c "Excel")
+            Start-Sleep -Seconds $Wait
 
-        # 저장 대화상자(#32770)를 기다린다.
-        $dlg = [IntPtr]::Zero
-        $deadline = (Get-Date).AddSeconds(30)
-        while ((Get-Date) -lt $deadline -and $dlg -eq [IntPtr]::Zero) {
-            $cand = @(Get-TopWindows | Where-Object {
-                $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Class -eq "#32770"
-            })
-            if ($cand.Count -gt 0) { $dlg = $cand[0].Handle } else { Start-Sleep -Milliseconds 500 }
-        }
-        if ($dlg -eq [IntPtr]::Zero) { throw "저장 대화상자가 뜨지 않았습니다." }
+            # 저장 대화상자를 기다린다.
+            $dlg = [IntPtr]::Zero
+            $deadline = (Get-Date).AddSeconds(30)
+            while ((Get-Date) -lt $deadline -and $dlg -eq [IntPtr]::Zero) {
+                $cand = @(Get-TopWindows | Where-Object {
+                    $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Class -eq "#32770"
+                })
+                if ($cand.Count -gt 0) { $dlg = $cand[0].Handle } else { Start-Sleep -Milliseconds 500 }
+            }
+            if ($dlg -eq [IntPtr]::Zero) { throw "저장 대화상자가 뜨지 않았습니다." }
 
-        [void][C4]::SetForegroundWindow($dlg)
-        Start-Sleep -Milliseconds 500
-        Send-Keys $dest.Replace("+","{+}").Replace("^","{^}") $dlg
-        Start-Sleep -Milliseconds 300
-        Send-Keys "{ENTER}" $dlg
-        Start-Sleep -Seconds ($Wait * 2)
+            [void][C4]::SetForegroundWindow($dlg)
+            Start-Sleep -Milliseconds 500
+            Send-Keys $dest.Replace("+","{+}").Replace("^","{^}") $dlg
+            Start-Sleep -Milliseconds 300
+            Send-Keys "{ENTER}" $dlg
+            Start-Sleep -Seconds ($Wait * 2)
 
-        # 프로그램이 이름이나 확장자를 제 방식대로 붙일 수 있다. 없으면 방금 생긴 파일을 찾아 맞춘다.
-        if (-not (Test-Path $dest)) {
-            $fresh = Get-ChildItem $RawRoot -File -ErrorAction SilentlyContinue |
-                     Where-Object { $_.LastWriteTime -gt $started } |
-                     Sort-Object LastWriteTime -Descending | Select-Object -First 1
-            if ($fresh) {
-                Move-Item $fresh.FullName $dest -Force
-                Write-Log "$stamp 파일명 정리: $($fresh.Name) -> $(Split-Path $dest -Leaf)"
+            # 저장이 끝나면 '엑셀 다운로드 성공' 안내창이 뜬다. 닫아야 다음으로 넘어간다.
+            foreach ($n in @(Get-TopWindows | Where-Object {
+                $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Handle -ne $win -and $_.Title -notlike "*통합고객목록*"
+            })) {
+                [void][C4]::SetForegroundWindow($n.Handle)
+                Start-Sleep -Milliseconds 300
+                Send-Keys "{ENTER}" $n.Handle
+                Start-Sleep -Milliseconds 400
+            }
+
+            # 프로그램이 이름을 제 방식대로 붙일 수 있다. 없으면 방금 생긴 파일을 찾아 맞춘다.
+            if (-not (Test-Path $dest)) {
+                $fresh = Get-ChildItem $RawRoot -File -Filter *.csv -ErrorAction SilentlyContinue |
+                         Where-Object { $_.LastWriteTime -gt $started } |
+                         Sort-Object LastWriteTime -Descending | Select-Object -First 1
+                if ($fresh) { Move-Item $fresh.FullName $dest -Force }
+            }
+            if (-not (Test-Path $dest)) { throw "파일이 만들어지지 않았습니다." }
+
+            if (Test-FileDate $dest $day) {
+                Write-Log "$stamp 저장 완료 ($count 건)" "Green"
+                $ok++; $done = $true
+            } else {
+                Remove-Item $dest -Force
+                throw "받아온 자료의 등록일이 $stamp 이 아닙니다."
             }
         }
+        catch {
+            Write-Log "$stamp 시도 $try 실패: $($_.Exception.Message)" "Yellow"
+            if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
 
-        # 저장이 끝나면 '엑셀 다운로드 성공' 안내창이 뜬다. 닫지 않으면 다음 날짜로 못 넘어간다.
-        $notice = @(Get-TopWindows | Where-Object {
-            $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Handle -ne $win -and
-            $_.Class -ne "#32770" -and $_.Title -notlike "*통합고객목록*"
-        })
-        foreach ($n in @(Get-TopWindows | Where-Object { $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Class -eq "#32770" })) {
-            [void][C4]::SetForegroundWindow($n.Handle)
-            Start-Sleep -Milliseconds 300
-            Send-Keys "{ENTER}" $n.Handle
-            Start-Sleep -Milliseconds 400
-        }
-        if ($notice.Count -gt 0) {
-            [void][C4]::SetForegroundWindow($notice[0].Handle)
-            Start-Sleep -Milliseconds 300
-            Send-Keys "{ENTER}" $notice[0].Handle
-            Start-Sleep -Milliseconds 400
-            Write-Log "안내창을 닫았습니다."
-        }
-
-        if (-not (Test-Path $dest)) { throw "저장 확인 실패 - 파일이 없습니다" }
-
-        if (Test-FileDate $dest $day) {
-            Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++
-        }
-        elseif ($script:Retried -eq 0) {
-            # 등록일 조건이 꺼진 채로 검색된 것이다. 체크박스를 뒤집고 같은 날짜를 다시 받는다.
-            Remove-Item $dest -Force
-            Write-Log "$stamp 받아온 날짜가 다릅니다. 등록일 조건을 뒤집고 다시 시도합니다." "Yellow"
-            $script:Retried = 1
-            $c = Switch-Tab $win "Filter"
-            Click-Ctrl (Need $c "DateCheck")
-            continue
-        }
-        elseif ($script:Retried -eq 1) {
-            # 체크박스가 원인이 아니었다. 날짜 입력 방식을 바꿔 본다.
-            Remove-Item $dest -Force
-            Write-Log "$stamp 아직도 날짜가 다릅니다. 날짜 입력 방식을 바꿔 다시 시도합니다." "Yellow"
-            $script:Retried = 2
-            $script:DateMode = 2
-            continue
-        }
-        else {
-            Remove-Item $dest -Force
-            throw "등록일 조건이 걸리지 않습니다. 화면에서 등록일 체크와 날짜칸을 확인해 주세요."
+            if ($try -eq 1) {
+                $script:DateMode = if ($script:DateMode -eq 2) { 1 } else { 2 }
+                Write-Log "  날짜 입력 방식을 $($script:DateMode) 번으로 바꿔 다시 해봅니다." "Yellow"
+            }
+            elseif ($try -eq 2) {
+                Write-Log "  등록일 체크박스를 뒤집고 다시 해봅니다." "Yellow"
+                try {
+                    $c = Switch-Tab $win "Filter"
+                    Click-Ctrl (Need $c "DateCheck")
+                } catch { Write-Log "  체크박스를 누르지 못했습니다: $($_.Exception.Message)" "Red" }
+            }
         }
     }
-    catch {
-        Write-Log "$stamp 실패: $($_.Exception.Message)" "Red"
-        $failed++
-    }
 
+    if (-not $done) { Write-Log "$stamp 세 번 모두 실패했습니다." "Red"; $failed++ }
     $day = $day.AddDays(1)
 }
 
