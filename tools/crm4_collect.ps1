@@ -62,17 +62,6 @@ public class C4 {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
-    [StructLayout(LayoutKind.Sequential)] public struct SYSTEMTIME {
-        public ushort wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds;
-    }
-    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, ref SYSTEMTIME st);
-
-    public static string GetDate(IntPtr h) {
-        SYSTEMTIME st = new SYSTEMTIME();
-        IntPtr r = SendMessage(h, 0x1001, (IntPtr)0, ref st);              // DTM_GETSYSTEMTIME
-        if (r.ToInt64() != 0) return "(비어있음)";
-        return st.wYear.ToString("D4") + "-" + st.wMonth.ToString("D2") + "-" + st.wDay.ToString("D2");
-    }
     public static string ClassOf(IntPtr h){ StringBuilder s=new StringBuilder(256); GetClassName(h,s,256); return s.ToString(); }
     public static string TextOf(IntPtr h){ StringBuilder s=new StringBuilder(1024); GetWindowText(h,s,1024); return s.ToString(); }
 }
@@ -266,32 +255,23 @@ function Switch-Tab([IntPtr]$win, [string]$name) {
 
 # 메시지로 넣어 보고, 되읽어서 확인하고, 안 들어갔으면 타이핑으로 다시 시도한다.
 # 넣었다고 믿고 넘어가면 엉뚱한 날짜로 검색해도 알 수가 없다.
-function Set-DatePicker($ctrl, [datetime]$value, [string]$label) {
-    $want = $value.ToString("yyyy-MM-dd")
-    $digits = $value.ToString("yyyyMMdd")
+# 날짜는 사람이 하듯 클릭하고 타이핑해서만 넣는다.
+# 값을 되읽는 메시지는 쓰지 않는다. 그 메시지가 CRM4 를 죽게 만들었다.
+# 제대로 들어갔는지는 내려받은 파일의 등록일로 확인한다.
+function Set-DatePicker($ctrl, [datetime]$value, [string]$label, [int]$mode = 1) {
+    Click-Ctrl $ctrl 12                       # 왼쪽 끝 = 연도 칸
+    Send-Keys "{ESC}" $script:TargetWindow    # 달력이 펼쳐졌으면 닫는다
+    Start-Sleep -Milliseconds 250
 
-    # 값을 메시지로 밀어 넣지 않는다. 그러다 프로그램이 종료된 적이 있다.
-    # 사람이 하듯 연도 칸을 클릭하고 숫자를 친다. 확인은 읽기 전용 메시지로만 한다.
-    foreach ($attempt in 1..2) {
-        Click-Ctrl $ctrl 12                       # 왼쪽 끝 = 연도 칸
-        Send-Keys "{ESC}" $script:TargetWindow    # 달력이 펼쳐졌으면 닫는다
-        Start-Sleep -Milliseconds 200
-
-        if ($attempt -eq 1) {
-            # 칸이 다 차면 다음 칸으로 저절로 넘어가는 것이 표준 동작이다.
-            Send-Keys $digits $script:TargetWindow
-        } else {
-            # 자동으로 안 넘어가는 경우를 위해 칸 이동을 직접 지정한다.
-            Send-Keys ($value.ToString("yyyy") + "{RIGHT}" + $value.ToString("MM") + "{RIGHT}" + $value.ToString("dd")) $script:TargetWindow
-        }
-        Start-Sleep -Milliseconds 400
-
-        $got = [C4]::GetDate($ctrl.H)
-        if ($got -eq $want) { Write-Log "  $label = $got"; return }
-        Write-Log "  $label 입력 재시도 ($attempt 회차 결과: $got)" "Yellow"
+    if ($mode -eq 1) {
+        # 칸이 다 차면 다음 칸으로 저절로 넘어가는 것이 표준 동작이다.
+        Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
+    } else {
+        # 자동으로 안 넘어가는 경우를 위해 칸 이동을 직접 지정한다.
+        Send-Keys ($value.ToString("yyyy") + "{RIGHT}" + $value.ToString("MM") + "{RIGHT}" + $value.ToString("dd")) $script:TargetWindow
     }
-
-    throw "$label 날짜가 $want 로 안 들어갔습니다. 마지막 값: $([C4]::GetDate($ctrl.H))"
+    Start-Sleep -Milliseconds 400
+    Write-Log "  $label 입력: $($value.ToString('yyyy-MM-dd')) (방식 $mode)"
 }
 
 # 이 프로그램의 체크박스는 BM_GETCHECK 에 늘 0 을 돌려주어 켜졌는지 알 수 없다.
@@ -407,7 +387,8 @@ if (-not $SkipDateCheck) {
 }
 
 $ok = 0; $empty = 0; $failed = 0
-$script:Retried = $false
+$script:Retried = 0
+$script:DateMode = 1
 $day = $Start.Date
 
 while ($day -le $End.Date) {
@@ -428,8 +409,8 @@ while ($day -le $End.Date) {
         Start-Sleep -Milliseconds 400
 
         $c = Switch-Tab $win "Filter"
-        Set-DatePicker (Need $c "DateFrom") $day "시작일"
-        Set-DatePicker (Need $c "DateTo") $day "종료일"
+        Set-DatePicker (Need $c "DateFrom") $day "시작일" $script:DateMode
+        Set-DatePicker (Need $c "DateTo") $day "종료일" $script:DateMode
 
         Click-Ctrl (Need $c "Search")
         $count = Wait-Search $win
@@ -503,18 +484,26 @@ while ($day -le $End.Date) {
         if (Test-FileDate $dest $day) {
             Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++
         }
-        elseif (-not $script:Retried) {
-            # 등록일 조건이 꺼진 채로 검색된 것이다. 체크박스를 한 번 뒤집고 이 날짜만 다시 받는다.
+        elseif ($script:Retried -eq 0) {
+            # 등록일 조건이 꺼진 채로 검색된 것이다. 체크박스를 뒤집고 같은 날짜를 다시 받는다.
             Remove-Item $dest -Force
             Write-Log "$stamp 받아온 날짜가 다릅니다. 등록일 조건을 뒤집고 다시 시도합니다." "Yellow"
-            $script:Retried = $true
+            $script:Retried = 1
             $c = Switch-Tab $win "Filter"
             Click-Ctrl (Need $c "DateCheck")
-            continue                                    # $day 를 올리지 않고 같은 날짜 재시도
+            continue
+        }
+        elseif ($script:Retried -eq 1) {
+            # 체크박스가 원인이 아니었다. 날짜 입력 방식을 바꿔 본다.
+            Remove-Item $dest -Force
+            Write-Log "$stamp 아직도 날짜가 다릅니다. 날짜 입력 방식을 바꿔 다시 시도합니다." "Yellow"
+            $script:Retried = 2
+            $script:DateMode = 2
+            continue
         }
         else {
             Remove-Item $dest -Force
-            throw "등록일 조건이 걸리지 않습니다. 화면에서 등록일 체크 상태를 확인해 주세요."
+            throw "등록일 조건이 걸리지 않습니다. 화면에서 등록일 체크와 날짜칸을 확인해 주세요."
         }
     }
     catch {
