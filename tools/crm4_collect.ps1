@@ -28,8 +28,8 @@ param(
     # 이미 받아둔 날짜도 다시 받는다.
     [switch]$Force,
 
-    # 시작할 때 등록일 체크박스를 한 번 누른다. 꺼져 있는 상태에서 시작할 때만 쓴다.
-    [switch]$ToggleDateCheck,
+    # 등록일 체크박스를 누르지 않는다. 이미 켜 둔 상태로 시작할 때 쓴다.
+    [switch]$SkipDateCheck,
 
     # 목록 탭의 전체선택을 누르지 않는다.
     [switch]$SkipSelectAll,
@@ -387,11 +387,11 @@ Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 �
 Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
-if ($ToggleDateCheck) {
+if (-not $SkipDateCheck) {
     Click-Ctrl (Need $ctrls "DateCheck")
-    Write-Log "등록일 체크박스를 한 번 눌렀습니다." "Yellow"
+    Write-Log "등록일 조건을 켰습니다. 실제로 걸렸는지는 첫 파일의 날짜로 확인합니다." "Yellow"
 } else {
-    Write-Log "등록일 조건은 건드리지 않습니다. 파일 날짜가 틀리면 그때 한 번 뒤집습니다."
+    Write-Log "등록일 체크박스는 건드리지 않습니다."
 }
 
 $ok = 0; $empty = 0; $failed = 0
