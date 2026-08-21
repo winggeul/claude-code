@@ -216,6 +216,17 @@ const KEEP_WITH_CODE = [/^기타\(/];
 // 이름은 줄이지 않되 코드는 떼는 것들.
 const KEEP_FULL_NAME = [/^자사채널-영상/];
 
+// 손으로 적다 어긋난 값들. 코드가 같거나 이름이 한두 글자 다른 것만 되돌린다.
+// 판단이 갈리는 값은 여기 넣지 않고 그대로 두어 눈에 띄게 한다.
+const TYPO = new Map([
+  ["타인스타그램", "인스타그램"],
+  ["소중함인사이트중", "소중함인사이트"],
+  ["소중함인사이트함", "소중함인사이트"],
+  ["소개/끝판왕 박선용", "끝판왕"],
+  ["끝판왕 박선화", "끝판왕"],
+  ["010", "미지정"],                     // 유입경로 칸에 전화번호가 들어간 건
+]);
+
 // 세부 항목의 열쇠. 'SOOP-PPL(1919)봉준★♨' 와 'SOOP-PPL(1919)봉준' 은 같은 코드이므로 한 줄이다.
 // 코드가 없는 값은 나눌 근거가 없으므로 채널 이름으로 합친다.
 function detailKeyOf(ch) {
@@ -231,11 +242,18 @@ function groupOf(ch) {
   for (const re of KEEP_FULL_NAME) {
     if (re.test(ch)) return trim(ch.replace(/\(\d{3,5}\).*$/, "")) || ch;
   }
-  let base = ch.split("(")[0].trim() || ch;
-  const dash = base.indexOf("-");
-  if (dash > 0) base = base.slice(0, dash).trim();
-  for (const [prefix, name] of GROUP_ALIAS) if (base.startsWith(prefix)) return name;
-  return base || ch;
+  const head = ch.split("(")[0].trim() || ch;
+  const dash = head.indexOf("-");
+  const base = dash > 0 ? head.slice(0, dash).trim() : head;
+  const tail = dash > 0 ? head.slice(dash + 1).trim() : "";
+
+  // PPL 은 같은 채널이라도 광고 성격이 달라 묶지 않고 'OO-PPL' 로 따로 세운다.
+  if (/^PPL/i.test(tail)) return base + "-PPL";
+  if (/^PPL/i.test(base)) return "유튜브-PPL";   // 'PPL(5504) 봉지욱…' 처럼 앞이 빠진 값
+
+  const fixed = TYPO.get(base) || base;
+  for (const [prefix, name] of GROUP_ALIAS) if (fixed.startsWith(prefix)) return name;
+  return fixed || ch;
 }
 let EXPANDED = new Set();
 const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
@@ -264,7 +282,31 @@ function channelOrder(rows) {
   return { top, hasFold: sorted.length > TOP_N };
 }
 
-const isSaturday = (iso) => new Date(iso + "T00:00:00").getDay() === 6;
+// 공휴일. 인입이 평일의 1/3 수준이라 평균과 증감 비교에서 빼야 한다.
+// 2026-07-17 · 08-15 · 08-17 은 받은 데이터에서 확인됐다. 나머지는 해마다 확인이 필요하다.
+const HOLIDAYS = new Set([
+  "2026-01-01",
+  "2026-02-16", "2026-02-17", "2026-02-18",              // 설날
+  "2026-03-01", "2026-03-02",                            // 삼일절 · 대체
+  "2026-05-05", "2026-05-24", "2026-05-25",              // 어린이날 · 부처님오신날 · 대체
+  "2026-06-06",                                          // 현충일
+  "2026-07-17",                                          // 제헌절
+  "2026-08-15", "2026-08-17",                            // 광복절 · 대체
+  "2026-09-24", "2026-09-25", "2026-09-26", "2026-09-28",// 추석 · 대체
+  "2026-10-03", "2026-10-05", "2026-10-09",              // 개천절 · 대체 · 한글날
+  "2026-12-25",
+]);
+
+const dowOf = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
+const isSaturday = (iso) => dowOf(iso) === 6;
+const isRest = (iso) => dowOf(iso) === 0 || dowOf(iso) === 6 || HOLIDAYS.has(iso);
+const restWhy = (iso) => HOLIDAYS.has(iso) ? "공휴일" : dowOf(iso) === 6 ? "토요일"
+                       : dowOf(iso) === 0 ? "일요일" : "";
+
+const shiftDays = (iso, n) =>
+  new Date(new Date(iso + "T00:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
+const weekStart = (iso) => shiftDays(iso, -((dowOf(iso) + 6) % 7));   // 월요일 시작
+const md = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
 
 function bucketKey(iso, grain) {
   const d = new Date(iso + "T00:00:00");
@@ -305,7 +347,8 @@ function aggregate() {
     const b = map.get(k);
     return {
       key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all,
-      sat: GRAIN === "day" && isSaturday(k),
+      rest: GRAIN === "day" && isRest(k),
+      why: GRAIN === "day" ? restWhy(k) : "",
       total: names.reduce((s, n) => s + b.parts[n], 0),
     };
   });
@@ -491,7 +534,7 @@ function drawStack(agg) {
 
     const lb = svgEl("text", { class: "tick", x: m.l - 10, y: y + h / 2 + 4, "text-anchor": "end" });
     lb.textContent = b.label;
-    if (b.sat) { lb.setAttribute("fill", cssVar("--s1")); lb.setAttribute("font-weight", "600"); }
+    if (b.rest) { lb.setAttribute("fill", cssVar("--s1")); lb.setAttribute("font-weight", "600"); }
     svg.appendChild(lb);
 
     // 왼쪽부터 쌓고, 조각 사이에 2px 면색 간격을 둬 경계를 분리한다.
@@ -618,40 +661,86 @@ function drawRank(agg) {
 
 <script>
 function drawKpis(agg) {
-  const b = agg.buckets;
-  const lastRow = [...DATA.rows].sort((a, c) => a.date < c.date ? 1 : -1)[0];
   const days = [...new Set(DATA.rows.map(r => r.date))].sort();
   const byDay = new Map(days.map(d => [d, 0]));
   for (const r of DATA.rows) byDay.set(r.date, byDay.get(r.date) + r.count);
 
-  const lastDay = days[days.length - 1], prevDay = days[days.length - 2];
+  const lastDay = days[days.length - 1];
   const lastVal = byDay.get(lastDay) || 0;
-  const prevVal = prevDay ? byDay.get(prevDay) : null;
-  const diff = prevVal == null ? null : lastVal - prevVal;
+
+  const sumRange = (from, to) => days.filter(d => d >= from && d <= to)
+                                     .reduce((s, d) => s + byDay.get(d), 0);
+  const hasRange = (from, to) => days.some(d => d >= from && d <= to);
+
+  // 비교 기준일. 토·일·공휴일은 인입이 평일의 1/3 수준이라 기준이 되지 못하므로
+  // 영업일이 나올 때까지 하루씩 거슬러 올라간다. 최신일 자체가 쉬는 날이면
+  // 평일과 견줄 수 없으니 같은 요일인 한 주 전과 견준다.
+  function prevWorkday(from) {
+    let cur = from;
+    for (let i = 0; i < 40; i++) {
+      cur = shiftDays(cur, -1);
+      if (!isRest(cur) && byDay.has(cur)) return cur;
+    }
+    return null;
+  }
+  const lastIsRest = isRest(lastDay);
+  const baseDay = lastIsRest
+    ? (byDay.has(shiftDays(lastDay, -7)) ? shiftDays(lastDay, -7) : null)
+    : prevWorkday(lastDay);
+  const baseName = lastIsRest ? `전주 같은 요일` : "전영업일";
+
+  // 주·월은 같은 길이의 앞 구간과 견준다. 요일 구성이 같아야 늘고 준 것이 보인다.
+  const wFrom = weekStart(lastDay);
+  const wCur = sumRange(wFrom, lastDay);
+  const wpFrom = shiftDays(wFrom, -7), wpTo = shiftDays(lastDay, -7);
+  const wPrev = hasRange(wpFrom, wpTo) ? sumRange(wpFrom, wpTo) : null;
+
+  const [yy, mm, dd] = lastDay.split("-").map(Number);
+  const pad = (n) => String(n).padStart(2, "0");
+  const mFrom = `${lastDay.slice(0, 7)}-01`;
+  const mCur = sumRange(mFrom, lastDay);
+  const pmY = mm === 1 ? yy - 1 : yy, pmM = mm === 1 ? 12 : mm - 1;
+  const pmEndDay = Math.min(dd, new Date(Date.UTC(pmY, pmM, 0)).getUTCDate());
+  const pmFrom = `${pmY}-${pad(pmM)}-01`, pmTo = `${pmY}-${pad(pmM)}-${pad(pmEndDay)}`;
+  const mPrev = hasRange(pmFrom, pmTo) ? sumRange(pmFrom, pmTo) : null;
+
+  // 평균은 영업일만 센다. 토·일·공휴일을 섞으면 평일 수준이 실제보다 낮게 보인다.
+  const workDays = days.filter(d => !isRest(d));
+  const workSum = workDays.reduce((s, d) => s + byDay.get(d), 0);
+  const avg = workDays.length ? Math.round(workSum / workDays.length) : 0;
 
   const grand = agg.totals.reduce((s, t) => s + t.value, 0);
-  const avg = days.length ? Math.round(grand / days.length) : 0;
   const topCh = agg.totals.find(t => t.name !== FOLD) || agg.totals[0];
   const share = grand ? Math.round((topCh.value / grand) * 100) : 0;
 
-  const deltaHtml = diff == null ? '<div class="delta">비교할 전일 없음</div>'
-    : `<div class="delta ${diff > 0 ? "up" : diff < 0 ? "down" : ""}">전일 대비 ${diff > 0 ? "▲" : diff < 0 ? "▼" : "─"} ${fmt(Math.abs(diff))}건</div>`;
+  const delta = (cur, prev, label) => {
+    if (prev == null) return `<div class="delta">비교할 ${label} 없음</div>`;
+    const d = cur - prev;
+    const cls = d > 0 ? "up" : d < 0 ? "down" : "";
+    const mark = d > 0 ? "▲" : d < 0 ? "▼" : "─";
+    return `<div class="delta ${cls}">${label} 대비 ${mark} ${fmt(Math.abs(d))}건</div>`;
+  };
 
   el("kpis").innerHTML = `
     <div class="kpi">
-      <div class="label">${lastDay.slice(5).replace("-", "/")} (최신)</div>
+      <div class="label">${md(lastDay)} (최신)${lastIsRest ? ` · ${restWhy(lastDay)}` : ""}</div>
       <div class="value">${fmt(lastVal)}<span class="unit">건</span></div>
-      ${deltaHtml}
+      ${delta(lastVal, baseDay ? byDay.get(baseDay) : null, baseDay ? `${baseName}(${md(baseDay)})` : "기준일")}
     </div>
     <div class="kpi">
-      <div class="label">기간 누계</div>
-      <div class="value">${fmt(grand)}<span class="unit">건</span></div>
-      <div class="delta">${days.length}일간</div>
+      <div class="label">이번 주 (${md(wFrom)}~${md(lastDay)})</div>
+      <div class="value">${fmt(wCur)}<span class="unit">건</span></div>
+      ${delta(wCur, wPrev, `전주 같은 구간(${md(wpFrom)}~${md(wpTo)})`)}
     </div>
     <div class="kpi">
-      <div class="label">일평균</div>
+      <div class="label">이번 달 (${mm}/1~${md(lastDay)})</div>
+      <div class="value">${fmt(mCur)}<span class="unit">건</span></div>
+      ${delta(mCur, mPrev, `전월 같은 구간(${pmM}/1~${pmM}/${pmEndDay})`)}
+    </div>
+    <div class="kpi">
+      <div class="label">영업일 평균</div>
       <div class="value">${fmt(avg)}<span class="unit">건</span></div>
-      <div class="delta">주말 포함</div>
+      <div class="delta">영업일 ${workDays.length}일 · 토·일·공휴일 제외</div>
     </div>
     <div class="kpi">
       <div class="label">최다 유입경로</div>
@@ -659,7 +748,6 @@ function drawKpis(agg) {
       <div class="delta">${fmt(topCh.value)}건 · 전체의 ${share}%</div>
     </div>`;
 }
-
 function drawLegend(agg) {
   const colors = colorOf(agg.names);
   el("legend-stack").innerHTML = agg.names.map(n =>
@@ -672,7 +760,7 @@ function drawTable(agg) {
     cols.map(n => `<th>${n}</th>`).join("") + `<th class="sum">합계</th></tr>`;
   const body = agg.buckets.map(b => {
     const t = cols.reduce((s, n) => s + (b.all[n] || 0), 0);
-    return `<tr${b.sat ? ' class="sat"' : ""}><td>${b.label}</td>` +
+    return `<tr${b.rest ? ' class="sat"' : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
       cols.map(n => `<td>${b.all[n] ? fmt(b.all[n]) : "<span class=\"zero\">–</span>"}</td>`).join("") +
       `<td class="sum">${fmt(t)}</td></tr>`;
   }).join("");
@@ -693,8 +781,10 @@ function render() {
   drawTable(agg);
 
   const days = [...new Set(DATA.rows.map(r => r.date))].sort();
+  const grand = DATA.rows.reduce((s, r) => s + r.count, 0);
   el("sub").textContent =
-    `${days[0]} ~ ${days[days.length - 1]} · 마지막 갱신 ${(DATA.generated || "").replace("T", " ").slice(0, 16)}`;
+    `${days[0]} ~ ${days[days.length - 1]} · ${days.length}일 · 누계 ${fmt(grand)}건` +
+    ` · 마지막 갱신 ${(DATA.generated || "").replace("T", " ").slice(0, 16)}`;
   el("chip-excl").textContent = (DATA.excluded || []).length
     ? `${DATA.excluded.join(", ")} 제외` : "제외 항목 없음";
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";

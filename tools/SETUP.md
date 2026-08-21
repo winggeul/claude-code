@@ -12,8 +12,13 @@ C 드라이브 최상위에 폴더를 만들 때 권한을 물으면 계속 진�
 crm4_collect.ps1    CRM4에서 CSV 내려받기
 crm4_daily.ps1      매일 도는 전체 작업 (스케줄러가 실행할 파일)
 aggregate.mjs       CSV 세어서 화면 만들기
+backfill_xlsx.mjs   하루치씩 시트로 나뉜 xlsx 를 세어 넣기 (과거분용)
 template.html       화면 틀
+store.json          7/1~8/20 집계본 — 이미 채워져 있습니다
 ```
+
+`store.json` 은 그날그날 뽑아 두신 파일을 센 결과입니다. 건수만 들어 있어 개인정보가 없습니다.
+이 파일을 같이 넣어야 8월 21일부터 이어서 쌓입니다. 지우면 과거분이 사라집니다.
 
 ## 2. Node.js 설치
 
@@ -47,16 +52,23 @@ powershell -ExecutionPolicy Bypass -File .\crm4_collect.ps1 -RawRoot .\raw -Diag
 
 끝나면 `site\index.html` 이 생깁니다. 열어서 숫자가 맞는지 확인합니다.
 
-## 4. 과거분 채우기
+## 4. 과거분 — 할 일 없음
 
-7월 1일부터 한 번에 받습니다. 날짜 수만큼 반복하므로 시간이 걸립니다.
+7월 1일 ~ 8월 20일은 `store.json` 에 이미 들어 있습니다. 다시 받지 마세요.
+
+지금 통합고객목록을 다시 뽑으면 그날 뽑았던 상태가 아니라 **오늘 기준으로 갱신된 상태**가 나옵니다.
+그 사이에 유입경로가 바뀌거나 지워진 건이 섞이므로, 과거분과 앞으로 쌓일 분의 기준이 어긋납니다.
+그래서 과거분은 그날 뽑아 두신 파일을 그대로 센 값만 씁니다.
+
+수집기는 `store.json` 의 마지막 날 다음날부터 채우므로, 8월 21일부터 알아서 이어집니다.
+
+나중에 또 하루치씩 시트로 나뉜 xlsx 를 넣어야 하면:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1 -Start 2026-07-01 -SkipDeploy
+node .\backfill_xlsx.mjs --xlsx .\받은파일.xlsx --store .\store.json
 ```
 
-이미 받은 날짜는 건너뛰므로, 중간에 끊겨도 다시 실행하면 이어집니다.
-하루당 30~40초 걸리므로 7월 1일부터면 30분쯤 봅니다. 그동안 그 PC는 건드리지 마세요.
+`--dry` 를 붙이면 저장하지 않고 어떻게 읽히는지만 보여줍니다.
 
 ## 5. 버셀 연결
 
