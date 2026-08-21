@@ -1,4 +1,4 @@
-<#
+﻿<#
 통합고객목록 자동 수집기
 
 등록일을 하루씩 밀며 [검색 → 목록 탭 → 전체선택 → 처리 탭 → Excel → 저장] 을 반복한다.
@@ -36,20 +36,20 @@ param(
 # ─────────── 컨트롤 식별자 (probe 덤프 실측값) ───────────
 
 $ID = @{
-    Tab        = 16       # SysTabControl32
-    Page고객조건 = 527392
-    Page목록     = 199984
-    Page처리     = 592892
-    등록일체크    = 68906   # '등록일' 체크박스
-    등록일시작    = 68896   # SysDateTimePick32
-    등록일종료    = 68902   # SysDateTimePick32
-    검색         = 724064
-    카운트라벨    = 199986  # '전체고객 : ... 조회고객 : N 명'
-    전체선택      = 396598
-    엑셀         = 68956   # 처리 탭 기능 그룹의 Excel 버튼
+    Tab         = 16       # SysTabControl32
+    PageFilter  = 527392   # 고객조건 페이지
+    PageList    = 199984   # 목록 페이지
+    PageProcess = 592892   # 처리 페이지
+    DateCheck   = 68906    # '등록일' 체크박스
+    DateFrom    = 68896    # SysDateTimePick32
+    DateTo      = 68902    # SysDateTimePick32
+    Search      = 724064   # 검색 버튼
+    CountLabel  = 199986   # '전체고객 : ... 조회고객 : N 명'
+    SelectAll   = 396598   # 전체선택
+    Excel       = 68956    # 처리 탭 기능 그룹의 Excel 버튼
 }
 
-$TabIndex = @{ 고객조건 = 0; 목록 = 4; 처리 = 5 }
+$TabIndex = @{ Filter = 0; List = 4; Process = 5 }
 
 # ─────────── Win32 ───────────
 
@@ -142,8 +142,8 @@ function Switch-Tab([IntPtr]$win, [string]$name) {
     [void][C4]::SendMessage($tab, 0x1330, [IntPtr]$TabIndex[$name], [IntPtr]::Zero)  # TCM_SETCURFOCUS
     Start-Sleep -Milliseconds 700
 
-    $page = Get-Control $win $ID."Page$name"
-    if (-not [C4]::IsWindowVisible($page)) { throw "'$name' 탭으로 전환하지 못했습니다." }
+    $page = Get-Control $win $ID["Page$name"]
+    if (-not [C4]::IsWindowVisible($page)) { throw "$name 탭으로 전환하지 못했습니다." }
 }
 
 # 키 입력도 포커스가 엉뚱한 곳이면 그대로 그 창에 타이핑된다. 같은 확인을 거친다.
@@ -162,7 +162,7 @@ function Set-DatePicker([IntPtr]$h, [datetime]$value) {
 
 # 검색은 서버 왕복이라 시간이 들쭉날쭉하다. 카운트 라벨이 멈출 때까지 기다린다.
 function Wait-Search([IntPtr]$win, [int]$timeoutSec = 180) {
-    $label = Get-Control $win $ID.카운트라벨
+    $label = Get-Control $win $ID.CountLabel
     $stable = 0
     $prev = $null
     $deadline = (Get-Date).AddSeconds($timeoutSec)
@@ -224,9 +224,9 @@ if (-not $DryRun) {
     Start-Sleep -Seconds 5
 }
 
-Switch-Tab $win "고객조건"
+Switch-Tab $win "Filter"
 if (-not $SkipDateCheck) {
-    Click-Control (Get-Control $win $ID.등록일체크)
+    Click-Control (Get-Control $win $ID.DateCheck)
     Write-Log "등록일 조건을 켰습니다. 첫 실행 시 체크 상태를 눈으로 확인하세요." "Yellow"
 }
 
@@ -244,11 +244,11 @@ while ($day -le $End.Date) {
 
     try {
         [void][C4]::SetForegroundWindow($win)
-        Switch-Tab $win "고객조건"
-        Set-DatePicker (Get-Control $win $ID.등록일시작) $day
-        Set-DatePicker (Get-Control $win $ID.등록일종료) $day
+        Switch-Tab $win "Filter"
+        Set-DatePicker (Get-Control $win $ID.DateFrom) $day
+        Set-DatePicker (Get-Control $win $ID.DateTo) $day
 
-        Click-Control (Get-Control $win $ID.검색)
+        Click-Control (Get-Control $win $ID.Search)
         $count = Wait-Search $win
 
         if ($count -eq 0) {
@@ -258,12 +258,12 @@ while ($day -le $End.Date) {
         Write-Log "$stamp 조회 $count 건" "White"
 
         if (-not $SkipSelectAll) {
-            Switch-Tab $win "목록"
-            Click-Control (Get-Control $win $ID.전체선택)
+            Switch-Tab $win "List"
+            Click-Control (Get-Control $win $ID.SelectAll)
         }
 
-        Switch-Tab $win "처리"
-        Click-Control (Get-Control $win $ID.엑셀)
+        Switch-Tab $win "Process"
+        Click-Control (Get-Control $win $ID.Excel)
         Start-Sleep -Seconds $Wait
 
         # 저장 대화상자(#32770)가 뜨면 경로를 넣고 저장한다.
