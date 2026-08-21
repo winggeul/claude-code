@@ -359,8 +359,14 @@ function bucketKey(iso, grain) {
 
 function bucketLabel(key, grain) {
   if (grain === "month") return `${+key.slice(5, 7)}월`;
+  if (grain === "week") {
+    // 목요일이 든 달의 몇 번째 주인지로 센다. 달 경계에 걸친 주가 한쪽에만 속한다.
+    const th = shiftDays(key, 3);
+    const y = +th.slice(0, 4), mo = +th.slice(5, 7), day = +th.slice(8, 10);
+    const firstThu = 1 + ((4 - new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 7) % 7);
+    return `${mo}월 ${Math.floor((day - firstThu) / 7) + 1}주차`;
+  }
   const d = new Date(key + "T00:00:00");
-  if (grain === "week") return `${d.getMonth() + 1}/${d.getDate()} 주`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
