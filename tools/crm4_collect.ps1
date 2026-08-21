@@ -25,6 +25,9 @@ param(
     # 클릭을 전혀 하지 않고, 컨트롤을 제대로 찾는지만 확인한다.
     [switch]$Diagnose,
 
+    # 이미 받아둔 날짜도 다시 받는다.
+    [switch]$Force,
+
     # 등록일 조건 체크박스를 스크립트가 켜지 않는다. 이미 켜 둔 경우.
     [switch]$SkipDateCheck,
 
@@ -278,9 +281,18 @@ function Set-DatePicker($ctrl, [datetime]$value, [string]$label) {
     Write-Log "  $label = $got"
 }
 
-# WinForms 체크박스는 상태를 못 읽는 경우가 있다. 읽히면 그 값을 쓰고, 안 읽히면 로그로 남긴다.
-function Get-CheckState($ctrl) {
-    return [C4]::SendMessage($ctrl.H, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()   # BM_GETCHECK
+# 이 프로그램의 체크박스는 BM_GETCHECK 에 늘 0 을 돌려주어 켜졌는지 알 수 없다.
+# 그래서 상태를 읽는 대신 결과로 판정한다. 받아온 파일의 등록일이 요청한 날짜면 조건이 걸린 것이다.
+function Test-FileDate([string]$path, [datetime]$day) {
+    $lines = @(Get-Content $path -Encoding Default -ErrorAction SilentlyContinue)
+    if ($lines.Count -lt 2) { return $true }
+    $body = @($lines | Select-Object -Skip 1 | Where-Object { $_.Trim() })
+    if ($body.Count -eq 0) { return $true }
+
+    # '2026-08-20 오전 9:34:27' 형태는 등록일 칸에만 나온다. 다른 날짜 칸에는 오전/오후가 없다.
+    $pat = "*" + $day.ToString("yyyy-MM-dd") + " 오*"
+    $hit = @($body | Where-Object { $_ -like $pat }).Count
+    return (($hit / $body.Count) -ge 0.8)
 }
 
 # 검색은 서버 왕복이라 걸리는 시간이 일정하지 않다. 고정 대기 대신 건수 라벨이 멈출 때까지 본다.
@@ -374,28 +386,23 @@ Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
 if (-not $SkipDateCheck) {
-    $chk = Need $ctrls "DateCheck"
-    $before = Get-CheckState $chk
-    if ($before -ne 1) {
-        Click-Ctrl $chk
-        $after = Get-CheckState $chk
-        Write-Log "등록일 조건 체크: $before -> $after" "Yellow"
-    } else {
-        Write-Log "등록일 조건이 이미 켜져 있습니다." "Yellow"
-    }
+    Click-Ctrl (Need $ctrls "DateCheck")
+    Write-Log "등록일 조건을 눌렀습니다. 실제로 켜졌는지는 첫 파일의 날짜로 확인합니다." "Yellow"
 }
 
 $ok = 0; $empty = 0; $failed = 0
+$script:Retried = $false
 $day = $Start.Date
 
 while ($day -le $End.Date) {
     $stamp = $day.ToString("yyyy-MM-dd")
     $dest = Join-Path $RawRoot "customers_$stamp.csv"
 
-    if (Test-Path $dest) {
+    if ((Test-Path $dest) -and -not $Force) {
         Write-Log "$stamp 이미 있음, 건너뜀"
         $day = $day.AddDays(1); continue
     }
+    if ($Force -and (Test-Path $dest)) { Remove-Item $dest -Force }
 
     try {
         [void][C4]::SetForegroundWindow($win)
@@ -472,8 +479,24 @@ while ($day -le $End.Date) {
             Write-Log "안내창을 닫았습니다."
         }
 
-        if (Test-Path $dest) { Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++ }
-        else { Write-Log "$stamp 저장 확인 실패 - 파일이 없습니다" "Red"; $failed++ }
+        if (-not (Test-Path $dest)) { throw "저장 확인 실패 - 파일이 없습니다" }
+
+        if (Test-FileDate $dest $day) {
+            Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++
+        }
+        elseif (-not $script:Retried) {
+            # 등록일 조건이 꺼진 채로 검색된 것이다. 체크박스를 한 번 뒤집고 이 날짜만 다시 받는다.
+            Remove-Item $dest -Force
+            Write-Log "$stamp 받아온 날짜가 다릅니다. 등록일 조건을 뒤집고 다시 시도합니다." "Yellow"
+            $script:Retried = $true
+            $c = Switch-Tab $win "Filter"
+            Click-Ctrl (Need $c "DateCheck")
+            continue                                    # $day 를 올리지 않고 같은 날짜 재시도
+        }
+        else {
+            Remove-Item $dest -Force
+            throw "등록일 조건이 걸리지 않습니다. 화면에서 등록일 체크 상태를 확인해 주세요."
+        }
     }
     catch {
         Write-Log "$stamp 실패: $($_.Exception.Message)" "Red"
