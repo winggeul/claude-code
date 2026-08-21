@@ -245,7 +245,7 @@ if ($DryRun) {
 # -Start 를 직접 주지 않았으면 이미 받아둔 마지막 날 다음날부터 어제까지를 메운다.
 # PC 가 며칠 꺼져 있었더라도 다음에 켜질 때 밀린 날짜가 한 번에 따라잡힌다.
 if (-not $PSBoundParameters.ContainsKey('Start')) {
-    $done = Get-ChildItem $RawRoot -Filter "customers_*.xls" -ErrorAction SilentlyContinue |
+    $done = Get-ChildItem $RawRoot -Filter "customers_*.csv" -ErrorAction SilentlyContinue |
             ForEach-Object { if ($_.BaseName -match '(\d{4}-\d{2}-\d{2})') { [datetime]$Matches[1] } } |
             Sort-Object -Descending | Select-Object -First 1
     if ($done) {
@@ -289,7 +289,7 @@ $day = $Start.Date
 
 while ($day -le $End.Date) {
     $stamp = $day.ToString("yyyy-MM-dd")
-    $dest = Join-Path $RawRoot "customers_$stamp.xls"
+    $dest = Join-Path $RawRoot "customers_$stamp.csv"
 
     if (Test-Path $dest) {
         Write-Log "$stamp 이미 있음, 건너뜀"
@@ -317,6 +317,7 @@ while ($day -le $End.Date) {
         }
 
         Switch-Tab $win "Process"
+        $started = Get-Date
         Click-Control (Get-Control $win $ID.Excel)
         Start-Sleep -Seconds $Wait
 
@@ -337,6 +338,18 @@ while ($day -le $End.Date) {
         Start-Sleep -Milliseconds 300
         Send-Keys "{ENTER}" $dlg
         Start-Sleep -Seconds ($Wait * 2)
+
+        # 프로그램이 확장자나 이름을 제 방식대로 붙일 수 있다. 지정한 이름이 없으면
+        # 방금 생긴 파일을 찾아 이름을 맞춘다.
+        if (-not (Test-Path $dest)) {
+            $fresh = Get-ChildItem $RawRoot -File -ErrorAction SilentlyContinue |
+                     Where-Object { $_.LastWriteTime -gt $started -and $_.Name -ne (Split-Path $dest -Leaf) } |
+                     Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            if ($fresh) {
+                Move-Item $fresh.FullName $dest -Force
+                Write-Log "$stamp 파일명 정리: $($fresh.Name) -> $(Split-Path $dest -Leaf)"
+            }
+        }
 
         if (Test-Path $dest) {
             Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++
