@@ -223,8 +223,19 @@ function Test-ForegroundIsCrm {
     return ([int]$o -eq $script:TargetPid)      # 달력이나 안내창도 CRM4 것이므로 통과시킨다
 }
 
+# 창 전환 직후나 달력이 닫히는 순간처럼 포그라운드가 잠깐 비는 때가 있다.
+# 몇 번 되찾아 보고, 그래도 다른 프로그램이 앞이면 그때 멈춘다.
+function Confirm-Foreground {
+    for ($i = 0; $i -lt 6; $i++) {
+        if (Test-ForegroundIsCrm) { return $true }
+        [void][C4]::SetForegroundWindow($script:TargetWindow)
+        Start-Sleep -Milliseconds 400
+    }
+    return (Test-ForegroundIsCrm)
+}
+
 function Click-Ctrl($ctrl, [int]$offsetX = 0) {
-    if (-not (Test-ForegroundIsCrm)) {
+    if (-not (Confirm-Foreground)) {
         throw "CRM4 창이 맨 앞이 아닙니다. 다른 프로그램을 클릭할 위험이 있어 중단합니다."
     }
     $r = New-Object C4+RECT
@@ -240,7 +251,7 @@ function Click-Ctrl($ctrl, [int]$offsetX = 0) {
 }
 
 function Send-Keys([string]$keys, [IntPtr]$expect) {
-    if (-not (Test-ForegroundIsCrm)) {
+    if (-not (Confirm-Foreground)) {
         throw "CRM4 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
     }
     [System.Windows.Forms.SendKeys]::SendWait($keys)
@@ -276,7 +287,7 @@ function Set-DatePicker($ctrl, [datetime]$value, [string]$label, [int]$mode = 1)
         # 자동으로 안 넘어가는 경우를 위해 칸 이동을 직접 지정한다.
         Send-Keys ($value.ToString("yyyy") + "{RIGHT}" + $value.ToString("MM") + "{RIGHT}" + $value.ToString("dd")) $script:TargetWindow
     }
-    Start-Sleep -Milliseconds 400
+    Start-Sleep -Milliseconds 600
     Write-Log "  $label 입력: $($value.ToString('yyyy-MM-dd')) (방식 $mode)"
 }
 
@@ -403,6 +414,7 @@ if ($SkipDateCheck) {
 
 $ok = 0; $empty = 0; $failed = 0
 $script:DateMode = 2      # 이 프로그램은 칸이 차도 다음 칸으로 넘어가지 않는다. 칸 이동을 직접 준다.
+$script:Flipped = $false
 
 $day = $Start.Date
 
@@ -499,16 +511,28 @@ while ($day -le $End.Date) {
             Write-Log "$stamp 시도 $try 실패: $($_.Exception.Message)" "Yellow"
             if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
 
+            # 날짜 입력 방식은 바꾸지 않는다. 이 프로그램에서 칸 이동을 주는 방식만 제대로 들어간다.
             if ($try -eq 1) {
                 Write-Log "  등록일 체크박스를 뒤집고 다시 해봅니다." "Yellow"
                 try {
                     $c = Switch-Tab $win "Filter"
                     Click-Ctrl (Need $c "DateCheck")
+                    $script:Flipped = $true
                 } catch { Write-Log "  체크박스를 누르지 못했습니다: $($_.Exception.Message)" "Red" }
             }
             elseif ($try -eq 2) {
-                $script:DateMode = if ($script:DateMode -eq 2) { 1 } else { 2 }
-                Write-Log "  날짜 입력 방식을 $($script:DateMode) 번으로 바꿔 다시 해봅니다." "Yellow"
+                # 뒤집어도 안 됐으면 원래대로 돌려놓고, 일시적인 문제였을 수 있으니 한 번 더 한다.
+                if ($script:Flipped) {
+                    Write-Log "  체크박스를 원래대로 돌리고 다시 해봅니다." "Yellow"
+                    try {
+                        $c = Switch-Tab $win "Filter"
+                        Click-Ctrl (Need $c "DateCheck")
+                        $script:Flipped = $false
+                    } catch { Write-Log "  체크박스를 누르지 못했습니다: $($_.Exception.Message)" "Red" }
+                } else {
+                    Write-Log "  잠시 뒤 다시 해봅니다." "Yellow"
+                    Start-Sleep -Seconds 3
+                }
             }
         }
     }
