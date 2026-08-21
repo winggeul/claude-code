@@ -50,6 +50,7 @@ public class C4 {
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
@@ -106,6 +107,7 @@ function Get-Descendants([IntPtr]$root) {
         [void][C4]::GetWindowRect($h, [ref]$r)
         $script:kids += [pscustomobject]@{
             H = $h
+            P = [C4]::GetParent($h)
             Class = [C4]::ClassOf($h)
             Text  = [C4]::TextOf($h)
             L = $r.Left; T = $r.Top; R = $r.Right; B = $r.Bottom
@@ -130,6 +132,19 @@ function Get-Descendants([IntPtr]$root) {
   전체선택     글자가 '전체선택' 인 BUTTON
   Excel       '기능' 상자 안의 버튼 두 개 중 오른쪽 (왼쪽은 SMS)
 #>
+# 탭 페이지들은 화면상 같은 자리에 겹쳐 있다. 위치만으로 고르면 다른 탭의 컨트롤이 걸린다.
+# 부모를 거슬러 올라가 정말 그 안에 든 것인지 확인한다.
+function Test-Under($ctrl, $ancestor) {
+    $p = $ctrl.P
+    $guard = 0
+    while ($p -ne [IntPtr]::Zero -and $guard -lt 20) {
+        if ($p -eq $ancestor.H) { return $true }
+        $p = [C4]::GetParent($p)
+        $guard++
+    }
+    return $false
+}
+
 function Resolve-Controls([IntPtr]$win) {
     $all = Get-Descendants $win
     $c = @{}
@@ -151,8 +166,15 @@ function Resolve-Controls([IntPtr]$win) {
         if ($picks.Count -ge 2) { $c.DateFrom = $picks[0]; $c.DateTo = $picks[1] }
     }
 
-    $c.CountLabel = $all | Where-Object { $_.Class -match "STATIC" -and $_.Text -match "조회고객" } | Select-Object -First 1
-    $c.SelectAll  = $all | Where-Object { $_.Class -match "BUTTON" -and $_.Text -eq "전체선택" } | Select-Object -First 1
+    $c.SelectAll = $all | Where-Object { $_.Class -match "BUTTON" -and $_.Text -eq "전체선택" } | Select-Object -First 1
+
+    # 건수 라벨은 검색 전에는 글자가 비어 있을 수 있다. 전체선택과 같은 줄의 오른쪽이라는 위치로 잡는다.
+    if ($c.SelectAll) {
+        $c.CountLabel = $all | Where-Object {
+            $_.Class -match "STATIC" -and $_.L -gt $c.SelectAll.R -and
+            [Math]::Abs($_.T - $c.SelectAll.T) -le 12
+        } | Sort-Object L | Select-Object -First 1
+    }
 
     if ($tab) {
         $c.Search = $all | Where-Object {
@@ -161,16 +183,19 @@ function Resolve-Controls([IntPtr]$win) {
         } | Sort-Object R -Descending | Select-Object -First 1
     }
 
-    $grp = $all | Where-Object { $_.Text -eq "기능" } | Select-Object -First 1
+    # 처리 탭의 '기능' 상자 안에 SMS 와 Excel 이 나란히 있다. 오른쪽이 Excel.
+    $grp = $all | Where-Object {
+        $_.Text -eq "기능" -and ($null -eq $c.PageProcess -or (Test-Under $_ $c.PageProcess))
+    } | Select-Object -First 1
+
     if ($grp) {
         $btns = @($all | Where-Object {
-            $_.H -ne $grp.H -and $_.L -ge $grp.L -and $_.R -le $grp.R -and
-            $_.T -ge $grp.T -and $_.B -le $grp.B -and $_.W -ge 30 -and $_.Ht -ge 14
+            $_.H -ne $grp.H -and $_.W -ge 30 -and $_.Ht -ge 14 -and (Test-Under $_ $grp)
         } | Sort-Object L)
         if ($btns.Count -ge 2) { $c.Excel = $btns[1] } elseif ($btns.Count -eq 1) { $c.Excel = $btns[0] }
     }
 
-    $c.Count = $all.Count
+    $c.Total = $all.Count
     return $c
 }
 
@@ -267,7 +292,7 @@ foreach ($name in @("List","Process","Filter")) {
     [void][C4]::SendMessage($tab0.H, 0x1330, [IntPtr]$TabIndex[$name], [IntPtr]::Zero)
     Start-Sleep -Milliseconds 600
     $found = Resolve-Controls $win
-    foreach ($k in $found.Keys) { if ($found[$k] -and -not $ctrls[$k]) { $ctrls[$k] = $found[$k] } }
+    foreach ($k in @($found.Keys)) { if ($k -ne "Total" -and $found[$k] -and -not $ctrls[$k]) { $ctrls[$k] = $found[$k] } }
 }
 
 Write-Host "찾은 결과:" -ForegroundColor Gray
