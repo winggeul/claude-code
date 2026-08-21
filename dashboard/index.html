@@ -41,15 +41,31 @@
     --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
       }
 
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: saturate(1.4) blur(6px);
+  }
+  .topbar-inner {
+    max-width: 1060px; margin: 0 auto;
+    padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  }
+  .topbar h1 { font-size: 18px; margin: 0; }
+  .meta { margin-bottom: 18px; }
+  .zero { color: var(--muted); }
+  td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
+
   body {
     background: var(--plane);
     color: var(--text-primary);
     font-family: var(--font-ui);
     line-height: 1.5;
     margin: 0;
-    padding: 24px 16px 64px;
+    padding: 0 0 64px;
   }
-  .wrap { max-width: 1060px; margin: 0 auto; }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 20px 16px 0; }
 
   header { margin-bottom: 20px; }
   h1 { font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.015em; text-wrap: balance; }
@@ -114,7 +130,8 @@
 
   details { margin-top: 8px; }
   summary { font-size: 13px; color: var(--text-secondary); cursor: pointer; padding: 6px 0; }
-  .tablewrap { overflow-x: auto; margin-top: 8px; }
+  .tablewrap { overflow-x: auto; margin-top: 8px; max-height: 70vh; }
+  thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
   table { border-collapse: collapse; font-size: 12px; width: 100%; }
   th, td { padding: 5px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
   th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface-1); }
@@ -128,25 +145,33 @@
   @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
 </style>
 
-<div class="wrap">
-  <header>
+<div class="topbar">
+  <div class="topbar-inner">
     <h1>일자별 DB 수량</h1>
-    <p class="sub" id="sub">불러오는 중…</p>
-    <div class="chips">
-      <span class="chip warn" id="chip-excl">협력점해피콜 제외</span>
-      <span class="chip" id="chip-src">샘플 데이터</span>
-    </div>
-  </header>
-
-  <section class="kpis" id="kpis"></section>
-
-  <div class="toolbar">
     <div class="seg" role="group" aria-label="기간 단위">
       <button data-grain="day"   aria-pressed="true">일자별</button>
       <button data-grain="week"  aria-pressed="false">주차별</button>
       <button data-grain="month" aria-pressed="false">월별</button>
     </div>
   </div>
+</div>
+
+<div class="wrap">
+  <div class="meta">
+    <p class="sub" id="sub">불러오는 중…</p>
+    <div class="chips">
+      <span class="chip warn" id="chip-excl">협력점해피콜 제외</span>
+      <span class="chip" id="chip-src">샘플 데이터</span>
+    </div>
+  </div>
+
+  <section class="card">
+    <h2>채널별 인입 수량</h2>
+    <p class="note">가로는 채널, 세로는 기간입니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
+    <div class="tablewrap" id="tablewrap"></div>
+  </section>
+
+  <section class="kpis" id="kpis"></section>
 
   <section class="card">
     <h2>전체 DB 수량 추이</h2>
@@ -168,14 +193,9 @@
   </section>
 
   <section class="card">
-    <h2>표로 보기</h2>
-    <p class="note">차트와 같은 값입니다. 복사해서 쓰셔도 됩니다.</p>
-    <div class="tablewrap" id="tablewrap"></div>
-
-    <details>
-      <summary>코드별 원본 값 보기</summary>
-      <div class="tablewrap" id="detailwrap"></div>
-    </details>
+    <h2>채널 세부</h2>
+    <p class="note">코드가 여러 개인 채널의 원본 값입니다.</p>
+    <div class="tablewrap" id="detailwrap"></div>
   </section>
 
   <footer id="foot"></footer>
@@ -185,9 +205,21 @@
 const SAMPLE = {"generated":"2026-08-21T03:00:00","excluded":["협력점해피콜"],"rows":[{"date":"2026-08-01","channel":"유튜브-PPL(5504)","count":1},{"date":"2026-08-01","channel":"유튜브-PPL(9068)","count":1},{"date":"2026-08-01","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-01","channel":"유튜브-PPL(2026)","count":1},{"date":"2026-08-01","channel":"구글-키워드(4869)","count":1},{"date":"2026-08-01","channel":"구글-키워드(3311)","count":2},{"date":"2026-08-01","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-01","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-01","channel":"뽐쿠폰(9850)","count":2},{"date":"2026-08-01","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-01","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-01","channel":"기타(4016)","count":2},{"date":"2026-08-01","channel":"소개","count":1},{"date":"2026-08-02","channel":"유튜브-PPL(5504)","count":1},{"date":"2026-08-02","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-02","channel":"유튜브-PPL(2026)","count":1},{"date":"2026-08-02","channel":"구글-키워드(4869)","count":3},{"date":"2026-08-02","channel":"구글-키워드(3311)","count":1},{"date":"2026-08-02","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-02","channel":"큐스코-온라인(9612)","count":1},{"date":"2026-08-02","channel":"뽐쿠폰(9850)","count":1},{"date":"2026-08-02","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-02","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-02","channel":"기타(4016)","count":3},{"date":"2026-08-02","channel":"소개","count":1},{"date":"2026-08-03","channel":"유튜브-PPL(5504)","count":3},{"date":"2026-08-03","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-03","channel":"유튜브-PPL(1002)","count":2},{"date":"2026-08-03","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-03","channel":"구글-키워드(4869)","count":5},{"date":"2026-08-03","channel":"구글-키워드(3311)","count":7},{"date":"2026-08-03","channel":"큐스코-온라인(9611)","count":5},{"date":"2026-08-03","channel":"큐스코-온라인(9612)","count":5},{"date":"2026-08-03","channel":"뽐쿠폰(9850)","count":5},{"date":"2026-08-03","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-03","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-03","channel":"기타(4016)","count":1},{"date":"2026-08-03","channel":"소개","count":2},{"date":"2026-08-04","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-04","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-04","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-04","channel":"유튜브-PPL(2026)","count":6},{"date":"2026-08-04","channel":"구글-키워드(4869)","count":6},{"date":"2026-08-04","channel":"구글-키워드(3311)","count":3},{"date":"2026-08-04","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-04","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-04","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-04","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-04","channel":"기타(4016)","count":2},{"date":"2026-08-04","channel":"소개","count":1},{"date":"2026-08-05","channel":"유튜브-PPL(5504)","count":3},{"date":"2026-08-05","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-05","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-05","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-05","channel":"구글-키워드(4869)","count":4},{"date":"2026-08-05","channel":"구글-키워드(3311)","count":7},{"date":"2026-08-05","channel":"큐스코-온라인(9611)","count":2},{"date":"2026-08-05","channel":"큐스코-온라인(9612)","count":1},{"date":"2026-08-05","channel":"뽐쿠폰(9850)","count":4},{"date":"2026-08-05","channel":"SOOP-PPL(1919)봉준★","count":3},{"date":"2026-08-05","channel":"기타(4016)","count":4},{"date":"2026-08-05","channel":"소개","count":2},{"date":"2026-08-06","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-06","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-06","channel":"유튜브-PPL(1002)","count":5},{"date":"2026-08-06","channel":"유튜브-PPL(2026)","count":3},{"date":"2026-08-06","channel":"구글-키워드(4869)","count":7},{"date":"2026-08-06","channel":"구글-키워드(3311)","count":2},{"date":"2026-08-06","channel":"큐스코-온라인(9611)","count":2},{"date":"2026-08-06","channel":"큐스코-온라인(9612)","count":3},{"date":"2026-08-06","channel":"뽐쿠폰(9850)","count":2},{"date":"2026-08-06","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-06","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-06","channel":"기타(4016)","count":2},{"date":"2026-08-06","channel":"소개","count":2},{"date":"2026-08-07","channel":"유튜브-PPL(5504)","count":4},{"date":"2026-08-07","channel":"유튜브-PPL(9068)","count":3},{"date":"2026-08-07","channel":"유튜브-PPL(1002)","count":5},{"date":"2026-08-07","channel":"유튜브-PPL(2026)","count":6},{"date":"2026-08-07","channel":"구글-키워드(4869)","count":5},{"date":"2026-08-07","channel":"구글-키워드(3311)","count":4},{"date":"2026-08-07","channel":"큐스코-온라인(9611)","count":2},{"date":"2026-08-07","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-07","channel":"뽐쿠폰(9850)","count":7},{"date":"2026-08-07","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-07","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-07","channel":"기타(4016)","count":3},{"date":"2026-08-07","channel":"소개","count":1},{"date":"2026-08-08","channel":"유튜브-PPL(5504)","count":1},{"date":"2026-08-08","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-08","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-08","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-08","channel":"구글-키워드(3311)","count":3},{"date":"2026-08-08","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-08","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-08","channel":"뽐쿠폰(9850)","count":2},{"date":"2026-08-08","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-08","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-08","channel":"소개","count":1},{"date":"2026-08-09","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-09","channel":"유튜브-PPL(9068)","count":1},{"date":"2026-08-09","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-09","channel":"유튜브-PPL(2026)","count":1},{"date":"2026-08-09","channel":"구글-키워드(4869)","count":2},{"date":"2026-08-09","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-09","channel":"뽐쿠폰(9850)","count":3},{"date":"2026-08-09","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-09","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-09","channel":"기타(4016)","count":1},{"date":"2026-08-09","channel":"소개","count":1},{"date":"2026-08-10","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-10","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-10","channel":"유튜브-PPL(1002)","count":4},{"date":"2026-08-10","channel":"유튜브-PPL(2026)","count":3},{"date":"2026-08-10","channel":"구글-키워드(4869)","count":4},{"date":"2026-08-10","channel":"구글-키워드(3311)","count":7},{"date":"2026-08-10","channel":"큐스코-온라인(9611)","count":4},{"date":"2026-08-10","channel":"큐스코-온라인(9612)","count":3},{"date":"2026-08-10","channel":"뽐쿠폰(9850)","count":3},{"date":"2026-08-10","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-10","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-10","channel":"기타(4016)","count":4},{"date":"2026-08-10","channel":"소개","count":2},{"date":"2026-08-11","channel":"유튜브-PPL(5504)","count":6},{"date":"2026-08-11","channel":"유튜브-PPL(9068)","count":3},{"date":"2026-08-11","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-11","channel":"유튜브-PPL(2026)","count":5},{"date":"2026-08-11","channel":"구글-키워드(4869)","count":5},{"date":"2026-08-11","channel":"구글-키워드(3311)","count":5},{"date":"2026-08-11","channel":"큐스코-온라인(9611)","count":4},{"date":"2026-08-11","channel":"큐스코-온라인(9612)","count":1},{"date":"2026-08-11","channel":"뽐쿠폰(9850)","count":6},{"date":"2026-08-11","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-11","channel":"기타(4016)","count":2},{"date":"2026-08-11","channel":"소개","count":2},{"date":"2026-08-12","channel":"유튜브-PPL(5504)","count":3},{"date":"2026-08-12","channel":"유튜브-PPL(9068)","count":4},{"date":"2026-08-12","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-12","channel":"유튜브-PPL(2026)","count":4},{"date":"2026-08-12","channel":"구글-키워드(4869)","count":5},{"date":"2026-08-12","channel":"큐스코-온라인(9611)","count":5},{"date":"2026-08-12","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-12","channel":"뽐쿠폰(9850)","count":5},{"date":"2026-08-12","channel":"SOOP-PPL(1919)봉준★","count":3},{"date":"2026-08-12","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-12","channel":"기타(4016)","count":4},{"date":"2026-08-12","channel":"소개","count":3},{"date":"2026-08-13","channel":"유튜브-PPL(5504)","count":1},{"date":"2026-08-13","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-13","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-13","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-13","channel":"구글-키워드(4869)","count":6},{"date":"2026-08-13","channel":"구글-키워드(3311)","count":5},{"date":"2026-08-13","channel":"큐스코-온라인(9611)","count":5},{"date":"2026-08-13","channel":"큐스코-온라인(9612)","count":3},{"date":"2026-08-13","channel":"뽐쿠폰(9850)","count":7},{"date":"2026-08-13","channel":"SOOP-PPL(1919)봉준★","count":3},{"date":"2026-08-13","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-13","channel":"기타(4016)","count":2},{"date":"2026-08-13","channel":"소개","count":2},{"date":"2026-08-14","channel":"유튜브-PPL(9068)","count":4},{"date":"2026-08-14","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-14","channel":"유튜브-PPL(2026)","count":1},{"date":"2026-08-14","channel":"구글-키워드(4869)","count":2},{"date":"2026-08-14","channel":"구글-키워드(3311)","count":1},{"date":"2026-08-14","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-14","channel":"큐스코-온라인(9612)","count":3},{"date":"2026-08-14","channel":"뽐쿠폰(9850)","count":2},{"date":"2026-08-14","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-14","channel":"기타(4016)","count":4},{"date":"2026-08-15","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-15","channel":"유튜브-PPL(9068)","count":3},{"date":"2026-08-15","channel":"유튜브-PPL(1002)","count":1},{"date":"2026-08-15","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-15","channel":"구글-키워드(4869)","count":1},{"date":"2026-08-15","channel":"구글-키워드(3311)","count":1},{"date":"2026-08-15","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-15","channel":"큐스코-온라인(9612)","count":1},{"date":"2026-08-15","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-15","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-15","channel":"기타(4016)","count":2},{"date":"2026-08-16","channel":"유튜브-PPL(5504)","count":3},{"date":"2026-08-16","channel":"유튜브-PPL(9068)","count":1},{"date":"2026-08-16","channel":"유튜브-PPL(1002)","count":2},{"date":"2026-08-16","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-16","channel":"구글-키워드(4869)","count":3},{"date":"2026-08-16","channel":"큐스코-온라인(9611)","count":1},{"date":"2026-08-16","channel":"뽐쿠폰(9850)","count":4},{"date":"2026-08-16","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-16","channel":"SOOP-PPL(1920)","count":1},{"date":"2026-08-16","channel":"기타(4016)","count":1},{"date":"2026-08-16","channel":"소개","count":1},{"date":"2026-08-17","channel":"유튜브-PPL(5504)","count":5},{"date":"2026-08-17","channel":"유튜브-PPL(9068)","count":6},{"date":"2026-08-17","channel":"유튜브-PPL(1002)","count":2},{"date":"2026-08-17","channel":"유튜브-PPL(2026)","count":4},{"date":"2026-08-17","channel":"구글-키워드(4869)","count":6},{"date":"2026-08-17","channel":"구글-키워드(3311)","count":6},{"date":"2026-08-17","channel":"큐스코-온라인(9611)","count":3},{"date":"2026-08-17","channel":"큐스코-온라인(9612)","count":3},{"date":"2026-08-17","channel":"뽐쿠폰(9850)","count":4},{"date":"2026-08-17","channel":"SOOP-PPL(1919)봉준★","count":2},{"date":"2026-08-17","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-17","channel":"기타(4016)","count":4},{"date":"2026-08-17","channel":"소개","count":3},{"date":"2026-08-18","channel":"유튜브-PPL(5504)","count":1},{"date":"2026-08-18","channel":"유튜브-PPL(9068)","count":6},{"date":"2026-08-18","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-18","channel":"유튜브-PPL(2026)","count":2},{"date":"2026-08-18","channel":"구글-키워드(4869)","count":5},{"date":"2026-08-18","channel":"구글-키워드(3311)","count":7},{"date":"2026-08-18","channel":"큐스코-온라인(9611)","count":6},{"date":"2026-08-18","channel":"큐스코-온라인(9612)","count":2},{"date":"2026-08-18","channel":"뽐쿠폰(9850)","count":8},{"date":"2026-08-18","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-18","channel":"SOOP-PPL(1920)","count":3},{"date":"2026-08-18","channel":"기타(4016)","count":2},{"date":"2026-08-18","channel":"소개","count":2},{"date":"2026-08-19","channel":"유튜브-PPL(5504)","count":2},{"date":"2026-08-19","channel":"유튜브-PPL(9068)","count":8},{"date":"2026-08-19","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-19","channel":"유튜브-PPL(2026)","count":1},{"date":"2026-08-19","channel":"구글-키워드(4869)","count":3},{"date":"2026-08-19","channel":"구글-키워드(3311)","count":4},{"date":"2026-08-19","channel":"큐스코-온라인(9611)","count":4},{"date":"2026-08-19","channel":"큐스코-온라인(9612)","count":5},{"date":"2026-08-19","channel":"뽐쿠폰(9850)","count":8},{"date":"2026-08-19","channel":"SOOP-PPL(1919)봉준★","count":1},{"date":"2026-08-19","channel":"SOOP-PPL(1920)","count":3},{"date":"2026-08-19","channel":"기타(4016)","count":1},{"date":"2026-08-19","channel":"소개","count":4},{"date":"2026-08-20","channel":"유튜브-PPL(5504)","count":3},{"date":"2026-08-20","channel":"유튜브-PPL(9068)","count":2},{"date":"2026-08-20","channel":"유튜브-PPL(1002)","count":3},{"date":"2026-08-20","channel":"유튜브-PPL(2026)","count":3},{"date":"2026-08-20","channel":"구글-키워드(4869)","count":3},{"date":"2026-08-20","channel":"구글-키워드(3311)","count":2},{"date":"2026-08-20","channel":"큐스코-온라인(9611)","count":4},{"date":"2026-08-20","channel":"큐스코-온라인(9612)","count":4},{"date":"2026-08-20","channel":"뽐쿠폰(9850)","count":5},{"date":"2026-08-20","channel":"SOOP-PPL(1919)봉준★","count":3},{"date":"2026-08-20","channel":"SOOP-PPL(1920)","count":2},{"date":"2026-08-20","channel":"기타(4016)","count":3},{"date":"2026-08-20","channel":"소개","count":2}]};
 
 const FOLD = "그 외";
-// 화면에는 유튜브-PPL(5504) 처럼 코드가 붙어 나온다. 괄호 앞까지를 묶음 이름으로 쓰고
-// 원본 값은 그대로 들고 있다가 펼쳐볼 때 보여준다.
-const groupOf = (ch) => (ch.split("(")[0].trim() || ch);
+// 유튜브-PPL(5504)♨ 처럼 이름 뒤에 세부 구분과 코드가 붙어 나온다.
+// 괄호 앞, 그다음 하이픈 앞까지를 묶음 이름으로 쓰고 원본은 펼쳐볼 때 보여준다.
+// 이름 규칙만으로 안 묶이는 것은 아래 목록으로 합친다.
+const GROUP_ALIAS = [
+  ["뽐", "뽐뿌"],        // 뽐뿌일반 · 뽐뿌스폰서 · 뽐쿠폰
+  ["네이버", "네이버"],   // 네이버-키워드 · 네이버카페-아사모 · 네이버-AI
+];
+
+function groupOf(ch) {
+  let base = ch.split("(")[0].trim() || ch;
+  const dash = base.indexOf("-");
+  if (dash > 0) base = base.slice(0, dash).trim();
+  for (const [prefix, name] of GROUP_ALIAS) if (base.startsWith(prefix)) return name;
+  return base || ch;
+}
 let EXPANDED = new Set();
 const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8"];
 const TOP_N = 7;   // + 그 외 = 최대 8계열. 색으로 구분되는 상한이다.
@@ -235,24 +267,36 @@ function bucketLabel(key, grain) {
 
 function aggregate() {
   const { top, hasFold } = channelOrder(DATA.rows);
-  const names = hasFold ? [...top, FOLD] : [...top];
+  const names = hasFold ? [...top, FOLD] : [...top];      // 차트용 - 색으로 구분되는 수만
   const map = new Map();
+  const allTotals = new Map();
+
   for (const r of DATA.rows) {
-    const k = bucketKey(r.date, GRAIN);
-    if (!map.has(k)) map.set(k, Object.fromEntries(names.map(n => [n, 0])));
     const g = groupOf(r.channel);
-    const name = top.includes(g) ? g : FOLD;
-    map.get(k)[name] += r.count;
+    const k = bucketKey(r.date, GRAIN);
+    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {} });
+    const b = map.get(k);
+    b.parts[top.includes(g) ? g : FOLD] += r.count;
+    b.all[g] = (b.all[g] || 0) + r.count;
+    allTotals.set(g, (allTotals.get(g) || 0) + r.count);
   }
+
   const keys = [...map.keys()].sort();
   const buckets = keys.map(k => {
-    const parts = map.get(k);
-    return { key: k, label: bucketLabel(k, GRAIN), parts, total: names.reduce((s, n) => s + parts[n], 0) };
+    const b = map.get(k);
+    return {
+      key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all,
+      total: names.reduce((s, n) => s + b.parts[n], 0),
+    };
   });
+
+  // 표에는 모든 채널을 건수 순으로 싣는다. 색이 모자란 것은 차트에서만 문제다.
+  const allNames = [...allTotals.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+
   const totals = names.map(n => ({ name: n, value: buckets.reduce((s, b) => s + b.parts[n], 0) }))
                       .sort((a, b) => b.value - a.value);
 
-  const detail = new Map();                       // 묶음 -> [{name, value}] 세부 코드
+  const detail = new Map();
   for (const r of DATA.rows) {
     const g = groupOf(r.channel);
     const key = top.includes(g) ? g : FOLD;
@@ -263,7 +307,7 @@ function aggregate() {
   for (const [k, m] of detail)
     detail.set(k, [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
 
-  return { names, buckets, totals, detail };
+  return { names, allNames, buckets, totals, detail };
 }
 
 const colorOf = (names) => {
@@ -598,14 +642,20 @@ function drawLegend(agg) {
 }
 
 function drawTable(agg) {
-  const head = `<tr><th>기간</th>${agg.names.map(n => `<th>${n}</th>`).join("")}<th>합계</th></tr>`;
-  const body = agg.buckets.map(b =>
-    `<tr><td>${b.label}</td>${agg.names.map(n => `<td>${b.parts[n] ? fmt(b.parts[n]) : "–"}</td>`).join("")}<td>${fmt(b.total)}</td></tr>`).join("");
-  const foot = `<tr><td>합계</td>${agg.names.map(n =>
-    `<td>${fmt(agg.buckets.reduce((s, b) => s + b.parts[n], 0))}</td>`).join("")}<td>${fmt(agg.totals.reduce((s, t) => s + t.value, 0))}</td></tr>`;
+  const cols = agg.allNames;
+  const head = `<tr><th>${GRAIN === "day" ? "날짜" : GRAIN === "week" ? "주차" : "월"}</th>` +
+    cols.map(n => `<th>${n}</th>`).join("") + `<th class="sum">합계</th></tr>`;
+  const body = agg.buckets.map(b => {
+    const t = cols.reduce((s, n) => s + (b.all[n] || 0), 0);
+    return `<tr><td>${b.label}</td>` +
+      cols.map(n => `<td>${b.all[n] ? fmt(b.all[n]) : "<span class=\"zero\">–</span>"}</td>`).join("") +
+      `<td class="sum">${fmt(t)}</td></tr>`;
+  }).join("");
+  const foot = `<tr><td>합계</td>` +
+    cols.map(n => `<td>${fmt(agg.buckets.reduce((s, b) => s + (b.all[n] || 0), 0))}</td>`).join("") +
+    `<td class="sum">${fmt(agg.buckets.reduce((s, b) => s + cols.reduce((x, n) => x + (b.all[n] || 0), 0), 0))}</td></tr>`;
   el("tablewrap").innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
 
-  // 코드별 원본 값은 접어서 따로 둔다. 평소에는 묶음만 보면 되기 때문이다.
   const det = agg.totals.filter(g => g.value > 0).map(g => {
     const subs = (agg.detail.get(g.name) || []).filter(s => s.value > 0);
     if (subs.length <= 1) return "";
@@ -613,8 +663,8 @@ function drawTable(agg) {
       subs.map(s => `<tr><td></td><td style="text-align:left;color:var(--text-secondary)">${s.name}</td><td>${fmt(s.value)}</td></tr>`).join("");
   }).join("");
   el("detailwrap").innerHTML = det
-    ? `<table><thead><tr><th>경로</th><th>코드</th><th>누계</th></tr></thead><tbody>${det}</tbody></table>`
-    : `<p class="note">코드가 나뉜 경로가 없습니다.</p>`;
+    ? `<table><thead><tr><th>채널</th><th>세부</th><th>누계</th></tr></thead><tbody>${det}</tbody></table>`
+    : `<p class="note">세부가 나뉜 채널이 없습니다.</p>`;
 }
 
 function render() {
