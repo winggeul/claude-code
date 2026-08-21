@@ -379,9 +379,10 @@ Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 �
 Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
+$script:Settled = $false
 if (-not $SkipDateCheck) {
     Click-Ctrl (Need $ctrls "DateCheck")
-    Write-Log "등록일 조건을 켰습니다. 실제로 걸렸는지는 첫 파일의 날짜로 확인합니다." "Yellow"
+    Write-Log "등록일 조건을 켰습니다. 이미 켜져 있었다면 첫 날짜에서 되돌립니다." "Yellow"
 } else {
     Write-Log "등록일 체크박스는 건드리지 않습니다."
 }
@@ -474,6 +475,7 @@ while ($day -le $End.Date) {
             if (Test-FileDate $dest $day) {
                 Write-Log "$stamp 저장 완료 ($count 건)" "Green"
                 $ok++; $done = $true
+                $script:Settled = $true
             } else {
                 Remove-Item $dest -Force
                 throw "받아온 자료의 등록일이 $stamp 이 아닙니다."
@@ -484,15 +486,15 @@ while ($day -le $End.Date) {
             if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
 
             if ($try -eq 1) {
-                $script:DateMode = if ($script:DateMode -eq 2) { 1 } else { 2 }
-                Write-Log "  날짜 입력 방식을 $($script:DateMode) 번으로 바꿔 다시 해봅니다." "Yellow"
-            }
-            elseif ($try -eq 2) {
                 Write-Log "  등록일 체크박스를 뒤집고 다시 해봅니다." "Yellow"
                 try {
                     $c = Switch-Tab $win "Filter"
                     Click-Ctrl (Need $c "DateCheck")
                 } catch { Write-Log "  체크박스를 누르지 못했습니다: $($_.Exception.Message)" "Red" }
+            }
+            elseif ($try -eq 2) {
+                $script:DateMode = if ($script:DateMode -eq 2) { 1 } else { 2 }
+                Write-Log "  날짜 입력 방식을 $($script:DateMode) 번으로 바꿔 다시 해봅니다." "Yellow"
             }
         }
     }
