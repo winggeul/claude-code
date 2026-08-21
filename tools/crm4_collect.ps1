@@ -26,6 +26,9 @@ param(
     # 처리 탭의 Excel 이 '선택한 고객' 기준으로 동작하는 경우를 대비해 전체선택을 먼저 누른다.
     [switch]$SkipSelectAll,
 
+    # 클릭 없이 창과 컨트롤만 확인한다. 처음 쓸 때 이걸로 먼저 점검할 것.
+    [switch]$DryRun,
+
     # 각 단계 사이 기본 대기(초). 서버가 느리면 늘린다.
     [int]$Wait = 2
 )
@@ -67,6 +70,7 @@ public class C4 {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
@@ -112,6 +116,14 @@ function Get-Control([IntPtr]$root, [int]$controlId) {
 # 이 프로그램의 버튼은 대부분 직접 그린 컨트롤이라 BM_CLICK 이 통하지 않는다.
 # 실행 시점의 좌표를 다시 읽어 실제 마우스로 누른다. 창을 옮겨도 스스로 맞춰진다.
 function Click-Control([IntPtr]$h, [int]$offsetX = 0) {
+    # 좌표로 누르는 방식이라, 대상 창이 맨 앞이 아니면 엉뚱한 창을 클릭하게 된다.
+    # SetForegroundWindow 는 윈도우 정책상 조용히 실패할 수 있으므로 매번 확인하고,
+    # 확인이 안 되면 클릭하지 않고 즉시 중단한다.
+    $fg = [C4]::GetForegroundWindow()
+    if ($fg -ne $script:TargetWindow) {
+        throw "통합고객목록 창이 맨 앞이 아닙니다. 다른 창을 클릭할 위험이 있어 중단합니다."
+    }
+
     $r = New-Object C4+RECT
     [void][C4]::GetWindowRect($h, [ref]$r)
     $x = if ($offsetX -gt 0) { $r.Left + $offsetX } else { [int](($r.Left + $r.Right) / 2) }
@@ -134,9 +146,17 @@ function Switch-Tab([IntPtr]$win, [string]$name) {
     if (-not [C4]::IsWindowVisible($page)) { throw "'$name' 탭으로 전환하지 못했습니다." }
 }
 
+# 키 입력도 포커스가 엉뚱한 곳이면 그대로 그 창에 타이핑된다. 같은 확인을 거친다.
+function Send-Keys([string]$keys, [IntPtr]$expectWindow) {
+    if ([C4]::GetForegroundWindow() -ne $expectWindow) {
+        throw "입력 대상 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
+    }
+    [System.Windows.Forms.SendKeys]::SendWait($keys)
+}
+
 function Set-DatePicker([IntPtr]$h, [datetime]$value) {
     Click-Control $h 12                      # 왼쪽 끝 = 연도 칸
-    [System.Windows.Forms.SendKeys]::SendWait($value.ToString("yyyyMMdd"))
+    Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
     Start-Sleep -Milliseconds 300
 }
 
@@ -171,11 +191,38 @@ if ($win -eq [IntPtr]::Zero) {
 
 if (-not (Test-Path $OutputRoot)) { New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null }
 
+if ($DryRun) {
+    Write-Host "점검 모드 - 클릭하지 않습니다." -ForegroundColor Cyan
+    foreach ($k in $ID.Keys) {
+        try {
+            $h = Get-Control $win $ID[$k]
+            $r = New-Object C4+RECT; [void][C4]::GetWindowRect($h, [ref]$r)
+            Write-Host ("  OK   {0,-10} id={1,-8} rect=({2},{3})" -f $k, $ID[$k], $r.Left, $r.Top) -ForegroundColor Green
+        } catch {
+            Write-Host ("  실패 {0,-10} id={1}" -f $k, $ID[$k]) -ForegroundColor Red
+        }
+    }
+    exit 0
+}
+
 Write-Log "수집 시작: $($Start.ToString('yyyy-MM-dd')) ~ $($End.ToString('yyyy-MM-dd'))" "Cyan"
 Write-Log "저장 위치: $OutputRoot" "Cyan"
 
+$script:TargetWindow = $win
+
 [void][C4]::SetForegroundWindow($win)
-Start-Sleep -Seconds 1
+Start-Sleep -Seconds 2
+
+if ([C4]::GetForegroundWindow() -ne $win) {
+    Write-Host "통합고객목록 창을 맨 앞으로 가져오지 못했습니다." -ForegroundColor Red
+    Write-Host "창을 직접 한 번 클릭해 활성화한 뒤 다시 실행하세요." -ForegroundColor Yellow
+    exit 1
+}
+
+if (-not $DryRun) {
+    Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 마세요. (Ctrl+C 로 취소)" -ForegroundColor Yellow
+    Start-Sleep -Seconds 5
+}
 
 Switch-Tab $win "고객조건"
 if (-not $SkipDateCheck) {
@@ -241,9 +288,9 @@ while ($day -le $End.Date) {
 
         [void][C4]::SetForegroundWindow($dlg)
         Start-Sleep -Milliseconds 500
-        [System.Windows.Forms.SendKeys]::SendWait($dest.Replace("+","{+}").Replace("^","{^}"))
+        Send-Keys $dest.Replace("+","{+}").Replace("^","{^}") $dlg
         Start-Sleep -Milliseconds 300
-        [System.Windows.Forms.SendKeys]::SendWait("{ENTER}")
+        Send-Keys "{ENTER}" $dlg
         Start-Sleep -Seconds ($Wait * 2)
 
         if (Test-Path $dest) {
