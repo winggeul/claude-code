@@ -220,9 +220,17 @@ function Need($ctrls, [string]$name) {
 
 # 좌표로 누르는 방식이라 대상 창이 맨 앞이 아니면 엉뚱한 창을 클릭하게 된다.
 # SetForegroundWindow 는 조용히 실패할 수 있으므로 매번 확인하고, 아니면 누르지 않고 멈춘다.
+function Test-ForegroundIsCrm {
+    $fg = [C4]::GetForegroundWindow()
+    if ($fg -eq [IntPtr]::Zero) { return $false }
+    $o = 0
+    [void][C4]::GetWindowThreadProcessId($fg, [ref]$o)
+    return ([int]$o -eq $script:TargetPid)      # 달력이나 안내창도 CRM4 것이므로 통과시킨다
+}
+
 function Click-Ctrl($ctrl, [int]$offsetX = 0) {
-    if ([C4]::GetForegroundWindow() -ne $script:TargetWindow) {
-        throw "통합고객목록 창이 맨 앞이 아닙니다. 다른 창을 클릭할 위험이 있어 중단합니다."
+    if (-not (Test-ForegroundIsCrm)) {
+        throw "CRM4 창이 맨 앞이 아닙니다. 다른 프로그램을 클릭할 위험이 있어 중단합니다."
     }
     $r = New-Object C4+RECT
     [void][C4]::GetWindowRect($ctrl.H, [ref]$r)      # 창을 옮겼을 수 있으니 지금 좌표를 다시 읽는다
@@ -237,8 +245,8 @@ function Click-Ctrl($ctrl, [int]$offsetX = 0) {
 }
 
 function Send-Keys([string]$keys, [IntPtr]$expect) {
-    if ([C4]::GetForegroundWindow() -ne $expect) {
-        throw "입력 대상 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
+    if (-not (Test-ForegroundIsCrm)) {
+        throw "CRM4 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
     }
     [System.Windows.Forms.SendKeys]::SendWait($keys)
 }
@@ -327,6 +335,7 @@ if ($win -eq [IntPtr]::Zero) {
     Write-Host "통합고객목록 창을 열어주세요. (고객관리 > 통합고객목록)" -ForegroundColor Red; exit 1
 }
 $script:TargetWindow = $win
+$script:TargetPid = $proc.Id
 
 if (-not (Test-Path $RawRoot)) {
     Write-Host "원본 저장 폴더가 없습니다: $RawRoot" -ForegroundColor Red
