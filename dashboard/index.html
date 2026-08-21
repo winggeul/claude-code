@@ -124,7 +124,8 @@
   .legend li { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
   .legendwrap { position: relative; }
   .legend li { cursor: help; padding: 2px 4px; border-radius: 5px; margin: -2px -4px; }
-  .legend li:hover { background: var(--surface-2); color: var(--text); }
+  .legend li:hover, .legend li.pinned { background: var(--surface-2); color: var(--text); }
+  .legend li.pinned { box-shadow: inset 0 0 0 1px var(--border); }
   .t-row.dim .nm, .t-row.dim .vl { color: var(--muted); }
   .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 
@@ -223,7 +224,8 @@
     <h2>유입경로별 구성</h2>
     <p class="note">건수 상위 11개 채널이 제 색을 갖고, 나머지는 <strong>그 외</strong>로 묶입니다.
       색으로 구분되는 수가 거기까지라서입니다. 위 표에는 모든 채널이 나옵니다.
-      막대에 커서를 올리면 채널별 건수가 나옵니다. 위 표에서 편 달만 그립니다.</p>
+      아래 <strong>색 이름을 누르면</strong> 그 채널의 코드별 상세가 나옵니다.
+      막대에 커서를 올리면 기간별 건수가 나옵니다. 위 표에서 편 달만 그립니다.</p>
     <div class="legendwrap">
       <ul class="legend" id="legend-stack"></ul>
       <div class="tip" id="tip-legend"></div>
@@ -778,6 +780,9 @@ function drawKpis(agg) {
       <div class="delta">${fmt(topCh.value)}건 · 전체의 ${share}%</div>
     </div>`;
 }
+// 눌러서 열어 둔 범례. 손가락으로 볼 때는 이쪽만 쓴다.
+let PINNED = null;
+
 function drawLegend(agg) {
   const colors = colorOf(agg.names);          // 색은 기간 전체 기준이라 접었다 펴도 바뀌지 않는다
   const shown = openBuckets(agg);
@@ -803,7 +808,7 @@ function drawLegend(agg) {
   const host = document.querySelector(".legendwrap"), tip = el("tip-legend");
   el("legend-stack").querySelectorAll("li").forEach(li => {
     const n = live[+li.dataset.i];
-    li.addEventListener("mouseenter", () => {
+    const show = () => {
       const total = shown.reduce((t, b) => t + b.parts[n], 0);
       const share = grand ? Math.round((total / grand) * 100) : 0;
       const all = rowsFor(n);
@@ -819,9 +824,25 @@ function drawLegend(agg) {
       showTip(tip, host, r.left - h.left + r.width / 2, r.bottom - h.top + 6,
         `<div class="t-head"><span class="swatch" style="background:${colors.get(n)}"></span>${n}</div>
          <div class="t-row"><span class="nm">누계</span><span class="vl">${fmt(total)}건 · ${share}%</span></div>${body}`);
+    };
+
+    li.addEventListener("mouseenter", () => { if (!PINNED) show(); });
+    li.addEventListener("mouseleave", () => { if (!PINNED) hideTip(tip); });
+    li.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      if (PINNED === n) { PINNED = null; hideTip(tip); }
+      else { PINNED = n; li.setAttribute("aria-expanded", "true"); show(); }
     });
-    li.addEventListener("mouseleave", () => hideTip(tip));
+    li.setAttribute("role", "button");
+    li.setAttribute("tabindex", "0");
+    li.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); li.click(); }
+      if (ev.key === "Escape") { PINNED = null; hideTip(tip); }
+    });
+    li.classList.toggle("pinned", PINNED === n);
   });
+
+  if (PINNED && !live.includes(PINNED)) { PINNED = null; hideTip(tip); }
 }
 
 function drawTable(agg) {
@@ -956,6 +977,10 @@ function render() {
     ? "지금 보이는 숫자는 화면 구성을 확인하기 위한 샘플입니다."
     : "CRM4 통합고객목록에서 수집한 데이터입니다. 협력점해피콜은 제외했습니다.";
 }
+
+document.addEventListener("click", () => {
+  if (PINNED) { PINNED = null; hideTip(el("tip-legend")); drawLegend(aggregate()); }
+});
 
 document.querySelectorAll(".seg button").forEach(btn => {
   btn.addEventListener("click", () => {
