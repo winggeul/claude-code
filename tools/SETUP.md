@@ -36,6 +36,12 @@ cd C:\CRM자동화
 powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1 -SkipDeploy
 ```
 
+컨트롤을 제대로 찾는지 먼저 보고 싶으면 클릭 없이 확인만 할 수 있습니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\crm4_collect.ps1 -RawRoot .\raw -Diagnose
+```
+
 **실행 중에는 마우스와 키보드를 건드리지 마세요.** 스크립트가 직접 화면을 조작합니다.
 5초 카운트다운 동안 `Ctrl+C` 로 취소할 수 있습니다.
 
@@ -50,6 +56,7 @@ powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1 -Start 2026-07-01 -Ski
 ```
 
 이미 받은 날짜는 건너뛰므로, 중간에 끊겨도 다시 실행하면 이어집니다.
+하루당 30~40초 걸리므로 7월 1일부터면 30분쯤 봅니다. 그동안 그 PC는 건드리지 마세요.
 
 ## 5. 버셀 연결
 
@@ -92,7 +99,15 @@ Register-ScheduledTask -TaskName "CRM4 일일수집" -Action $action -Trigger $t
 
 로그온할 때마다 실행됩니다. 며칠 꺼져 있었어도 켜지는 순간 밀린 날짜를 메웁니다.
 
-CRM4가 먼저 떠 있어야 하므로, CRM4를 **시작 프로그램에 등록**해 두는 편이 좋습니다.
+새벽 정해진 시각으로 하려면 트리거 줄만 바꿉니다. 다만 그 시각에 PC가 켜져 있고
+CRM4가 떠 있어야 하므로, 로그온 방식이 더 안전합니다.
+
+```powershell
+$trigger = New-ScheduledTaskTrigger -Daily -At 3am
+```
+
+CRM4 와 `통합고객목록` 창이 떠 있어야 동작하므로, CRM4 를 **시작 프로그램에 등록**하고
+로그인 후 통합고객목록 창을 열어 둔 채로 두는 것이 좋습니다.
 
 ## 확인과 문제 해결
 
@@ -100,7 +115,8 @@ CRM4가 먼저 떠 있어야 하므로, CRM4를 **시작 프로그램에 등록*
 |---|---|
 | 아무 일도 안 일어남 | `C:\CRM자동화` 의 `log_*.txt` |
 | 창을 못 찾는다고 나옴 | CRM4 `통합고객목록` 창이 떠 있는지 |
-| 클릭 안 하고 멈춤 | 다른 창이 앞에 있었던 것. 정상 동작이며 다시 실행하면 된다 |
+| 클릭 안 하고 멈춤 | 다른 프로그램이 앞에 있었던 것. 정상 동작이며 다시 실행하면 된다 |
+| 받아온 날짜가 다르다고 나옴 | 스스로 등록일 체크박스를 뒤집고 다시 받는다. 그대로 두면 된다 |
 | 숫자가 안 맞음 | `-KeepRaw` 로 실행해 원본 CSV 를 남긴 뒤 대조 |
 
 원본 CSV 는 `C:\CRM자동화\raw` 에 잠깐 머물다가 집계가 끝나면 지워집니다.
