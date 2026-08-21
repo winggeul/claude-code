@@ -7,7 +7,10 @@
     color-scheme: light;
     --plane:        #f9f9f7;
     --surface-1:    #fcfcfb;
+    --surface-2:    #f2f1ec;
+    --surface-3:    #e9e8e1;
     --text-primary: #0b0b0b;
+    --text:         #0b0b0b;
     --text-secondary:#52514e;
     --muted:        #898781;
     --grid:         #e1e0d9;
@@ -24,8 +27,8 @@
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
-      --plane:#0d0d0d; --surface-1:#1a1a19;
-      --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+      --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
+      --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
       --good:#0ca30c; --critical:#d03b3b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
@@ -36,8 +39,8 @@
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-    --plane:#0d0d0d; --surface-1:#1a1a19;
-    --text-primary:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+    --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
+    --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
     --good:#0ca30c; --critical:#d03b3b;
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
@@ -167,7 +170,7 @@
     font-weight: 600; text-align: left; color: var(--text);
     position: sticky; left: 0;
   }
-  tbody tr.mrow td:hover { background: var(--surface-3, var(--surface-2)); }
+  tbody tr.mrow td:hover { background: var(--surface-3); }
   tbody tr.mrow .caret { color: var(--muted); margin-right: 6px; font-size: 10px; }
   tbody tr.mrow .q { color: var(--muted); font-weight: 400; margin-left: 6px; }
   thead th.open { cursor: pointer; color: var(--text-secondary); user-select: none; }
@@ -669,12 +672,26 @@ function drawStack(agg) {
       const path = svgEl("path", {
         d: isEnd ? barPathH(x0, y, w, h, 4) : `M${x0},${y}h${w}v${h}h${-w}Z`,
         fill: colors.get(n) });
+      // 조각 하나에 올리면 그 채널의 코드별 내역을 보여준다.
+      // '그 외' 는 코드가 아니라 무엇이 묶였는지가 궁금한 자리다.
       path.addEventListener("mousemove", () => {
         const r = svg.getBoundingClientRect();
-        const rows = stack.slice().reverse().map(x =>
-          `<div class="t-row"><span class="nm"><span class="swatch" style="background:${colors.get(x)}"></span>${x}</span><span class="vl">${fmt(b.parts[x])}</span></div>`).join("");
+        const parts = n === FOLD
+          ? agg.allNames.filter(g => !agg.names.includes(g))
+              .map(g => ({ name: g, value: b.all[g] || 0 }))
+          : (agg.detail.get(n) || []).map(d => ({ name: d.name, value: b.sub[d.key] || 0 }));
+        const list = parts.filter(p => p.value > 0).sort((a, c) => c.value - a.value);
+        const cut = list.slice(0, 12), rest = list.length - cut.length;
+        const head = n === FOLD ? "묶인 채널" : "코드별";
+        const rows = list.length > 1
+          ? `<div class="t-row dim"><span class="nm">${head}</span></div>` +
+            cut.map(p => `<div class="t-row"><span class="nm">${p.name}</span><span class="vl">${fmt(p.value)}</span></div>`).join("") +
+            (rest > 0 ? `<div class="t-row dim"><span class="nm">외 ${rest}개</span></div>` : "")
+          : "";
         showTip(tip, host, x1 * (r.width / W), (y * (r.height / H)) - 16,
-          `<div class="t-head">${b.label} · 합계 ${fmt(b.total)}건</div>${rows}`);
+          `<div class="t-head"><span class="swatch" style="background:${colors.get(n)}"></span>${n}</div>
+           <div class="t-row"><span class="nm">${b.label}</span><span class="vl">${fmt(v)}건</span></div>
+           <div class="t-row dim"><span class="nm">그날 합계</span><span class="vl">${fmt(b.total)}건</span></div>${rows}`);
       });
       path.addEventListener("mouseleave", () => hideTip(tip));
       svg.appendChild(path);
