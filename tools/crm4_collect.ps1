@@ -67,11 +67,6 @@ public class C4 {
     }
     [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, ref SYSTEMTIME st);
 
-    public static bool SetDate(IntPtr h, int y, int m, int d) {
-        SYSTEMTIME st = new SYSTEMTIME();
-        st.wYear = (ushort)y; st.wMonth = (ushort)m; st.wDay = (ushort)d;
-        return SendMessage(h, 0x1002, (IntPtr)0, ref st) != IntPtr.Zero;   // DTM_SETSYSTEMTIME
-    }
     public static string GetDate(IntPtr h) {
         SYSTEMTIME st = new SYSTEMTIME();
         IntPtr r = SendMessage(h, 0x1001, (IntPtr)0, ref st);              // DTM_GETSYSTEMTIME
@@ -265,22 +260,30 @@ function Switch-Tab([IntPtr]$win, [string]$name) {
 # 넣었다고 믿고 넘어가면 엉뚱한 날짜로 검색해도 알 수가 없다.
 function Set-DatePicker($ctrl, [datetime]$value, [string]$label) {
     $want = $value.ToString("yyyy-MM-dd")
+    $digits = $value.ToString("yyyyMMdd")
 
-    [void][C4]::SetDate($ctrl.H, $value.Year, $value.Month, $value.Day)
-    Start-Sleep -Milliseconds 250
-    $got = [C4]::GetDate($ctrl.H)
+    # 값을 메시지로 밀어 넣지 않는다. 그러다 프로그램이 종료된 적이 있다.
+    # 사람이 하듯 연도 칸을 클릭하고 숫자를 친다. 확인은 읽기 전용 메시지로만 한다.
+    foreach ($attempt in 1..2) {
+        Click-Ctrl $ctrl 12                       # 왼쪽 끝 = 연도 칸
+        Send-Keys "{ESC}" $script:TargetWindow    # 달력이 펼쳐졌으면 닫는다
+        Start-Sleep -Milliseconds 200
 
-    if ($got -ne $want) {
-        Click-Ctrl $ctrl 12                    # 왼쪽 끝 = 연도 칸
-        Send-Keys "{ESC}" $script:TargetWindow  # 달력이 펼쳐졌으면 닫는다
-        Start-Sleep -Milliseconds 150
-        Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
+        if ($attempt -eq 1) {
+            # 칸이 다 차면 다음 칸으로 저절로 넘어가는 것이 표준 동작이다.
+            Send-Keys $digits $script:TargetWindow
+        } else {
+            # 자동으로 안 넘어가는 경우를 위해 칸 이동을 직접 지정한다.
+            Send-Keys ($value.ToString("yyyy") + "{RIGHT}" + $value.ToString("MM") + "{RIGHT}" + $value.ToString("dd")) $script:TargetWindow
+        }
         Start-Sleep -Milliseconds 400
+
         $got = [C4]::GetDate($ctrl.H)
+        if ($got -eq $want) { Write-Log "  $label = $got"; return }
+        Write-Log "  $label 입력 재시도 ($attempt 회차 결과: $got)" "Yellow"
     }
 
-    if ($got -ne $want) { throw "$label 날짜가 $want 로 안 들어갔습니다. 현재 값: $got" }
-    Write-Log "  $label = $got"
+    throw "$label 날짜가 $want 로 안 들어갔습니다. 마지막 값: $([C4]::GetDate($ctrl.H))"
 }
 
 # 이 프로그램의 체크박스는 BM_GETCHECK 에 늘 0 을 돌려주어 켜졌는지 알 수 없다.
@@ -409,6 +412,9 @@ while ($day -le $End.Date) {
     if ($Force -and (Test-Path $dest)) { Remove-Item $dest -Force }
 
     try {
+        if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) {
+            throw "CRM4enterprise 가 종료되었습니다."
+        }
         [void][C4]::SetForegroundWindow($win)
         Start-Sleep -Milliseconds 400
 
