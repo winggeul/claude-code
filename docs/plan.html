@@ -1,0 +1,205 @@
+<title>CRM 고객목록 자동 집계</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --ground:   #f7f6f3;
+    --panel:    #ffffff;
+    --ink:      #191c1f;
+    --ink-2:    #4d5257;
+    --ink-3:    #868b90;
+    --rule:     #e2e0da;
+    --accent:   #2f5d8c;
+    --accent-soft: #eaf0f7;
+    --flag:     #9a5b1e;
+    --flag-soft:#f8efe3;
+    --font-ui:  "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
+    --font-num: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --ground: #121415; --panel: #1b1e20;
+      --ink: #f2f1ee; --ink-2: #b6babd; --ink-3: #82868a;
+      --rule: #2e3134;
+      --accent: #7aa9d8; --accent-soft: #1e2a36;
+      --flag: #d9a05e; --flag-soft: #2c2419;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #121415; --panel: #1b1e20;
+    --ink: #f2f1ee; --ink-2: #b6babd; --ink-3: #82868a;
+    --rule: #2e3134;
+    --accent: #7aa9d8; --accent-soft: #1e2a36;
+    --flag: #d9a05e; --flag-soft: #2c2419;
+  }
+
+  body {
+    background: var(--ground); color: var(--ink);
+    font-family: var(--font-ui); line-height: 1.62;
+    margin: 0; padding: 40px 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 34px; }
+
+  .eyebrow {
+    font-family: var(--font-num); font-size: 11px; letter-spacing: .14em;
+    text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px;
+  }
+  h1 { font-size: 27px; font-weight: 700; letter-spacing: -.02em; margin: 0 0 10px; text-wrap: balance; }
+  .lede { font-size: 15px; color: var(--ink-2); margin: 0; max-width: 60ch; }
+
+  section { display: flex; flex-direction: column; gap: 14px; }
+  h2 {
+    font-size: 13px; font-weight: 600; margin: 0; color: var(--ink-2);
+    padding-bottom: 9px; border-bottom: 1px solid var(--rule);
+    display: flex; align-items: baseline; gap: 9px;
+  }
+  h2 .n { font-family: var(--font-num); font-size: 11px; color: var(--ink-3); }
+  p { margin: 0; font-size: 14.5px; color: var(--ink-2); max-width: 62ch; }
+  strong { color: var(--ink); font-weight: 600; }
+
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 20px 18px 14px; }
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--ink-2); }
+  figcaption { font-size: 12.5px; color: var(--ink-3); margin-top: 12px; text-align: center; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  caption { caption-side: bottom; font-size: 12.5px; color: var(--ink-3); padding-top: 10px; text-align: left; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  thead th { font-size: 12px; font-weight: 600; color: var(--ink-3); }
+  td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+
+  .tag {
+    display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 4px;
+    font-weight: 500; white-space: nowrap;
+  }
+  .tag.has { background: var(--flag-soft); color: var(--flag); }
+  .tag.none { background: var(--accent-soft); color: var(--accent); }
+
+  ol.asks { list-style: none; counter-reset: q; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  ol.asks li {
+    counter-increment: q; background: var(--panel); border: 1px solid var(--rule);
+    border-radius: 8px; padding: 14px 16px 14px 46px; position: relative; font-size: 14.5px;
+  }
+  ol.asks li::before {
+    content: counter(q); position: absolute; left: 16px; top: 14px;
+    font-family: var(--font-num); font-size: 12px; font-weight: 500;
+    color: var(--accent); background: var(--accent-soft);
+    width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center;
+  }
+  ol.asks li .why { display: block; font-size: 13px; color: var(--ink-3); margin-top: 3px; }
+
+  .a-stroke { stroke: var(--accent); }
+  .a-fill   { fill: var(--accent); }
+
+  a { color: var(--accent); }
+  footer { font-size: 13px; color: var(--ink-3); border-top: 1px solid var(--rule); padding-top: 18px; }
+</style>
+
+<main>
+  <header>
+    <p class="eyebrow">검토 요청</p>
+    <h1>CRM 고객목록 자동 집계</h1>
+    <p class="lede">
+      CRM4의 통합고객목록을 매일 자동으로 받아, <strong>유입경로별 DB 건수</strong>를
+      집계해 보는 화면을 만들려 합니다. 현재는 사람이 매번 확인하고 있습니다.
+    </p>
+  </header>
+
+  <section>
+    <h2><span class="n">01</span> 동작 방식</h2>
+    <figure>
+      <svg viewBox="0 0 880 330" role="img" aria-label="CRM4에서 매크로 PC가 매일 엑셀을 내려받아, 원본은 웹하드에 저장하고 건수 집계만 공유 링크로 배포하는 흐름">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,1 10,5 0,9" fill="currentColor"/>
+          </marker>
+          <marker id="ah-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <polygon points="0,1 10,5 0,9" class="a-fill"/>
+          </marker>
+        </defs>
+
+        <rect x="14" y="128" width="150" height="74" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="89" y="160" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">CRM4</text>
+        <text x="89" y="180" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".65">통합고객목록</text>
+
+        <line x1="164" y1="165" x2="322" y2="165" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+        <text x="243" y="140" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".8">① 어제 등록분 검색</text>
+        <text x="243" y="155" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".8">엑셀 내보내기</text>
+
+        <rect x="330" y="108" width="200" height="114" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="430" y="150" text-anchor="middle" font-size="14" font-weight="600" fill="currentColor">매크로 PC</text>
+        <text x="430" y="170" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".65">매일 새벽 자동 실행</text>
+        <text x="430" y="188" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".65">사람 개입 없음</text>
+
+        <path d="M530 146 C 600 146, 620 96, 694 96" fill="none" stroke="currentColor" stroke-width="1.4" marker-end="url(#ah)"/>
+        <text x="612" y="76" text-anchor="middle" font-size="11.5" fill="currentColor" opacity=".8">② 원본 그대로 저장</text>
+
+        <path d="M530 190 C 600 190, 620 246, 694 246" fill="none" class="a-stroke" stroke-width="1.6" marker-end="url(#ah-a)"/>
+        <text x="612" y="286" text-anchor="middle" font-size="11.5" class="a-fill">③ 건수만 세어서</text>
+        <text x="612" y="301" text-anchor="middle" font-size="11.5" class="a-fill">웹페이지 생성</text>
+
+        <rect x="702" y="62" width="166" height="70" rx="9" fill="none" stroke="currentColor" stroke-width="1.4"/>
+        <text x="785" y="90" text-anchor="middle" font-size="13.5" font-weight="600" fill="currentColor">웹하드</text>
+        <text x="785" y="110" text-anchor="middle" font-size="11" fill="currentColor" opacity=".65">엑셀 원본 보관</text>
+
+        <rect x="702" y="212" width="166" height="70" rx="9" fill="none" class="a-stroke" stroke-width="1.6"/>
+        <text x="785" y="240" text-anchor="middle" font-size="13.5" font-weight="600" class="a-fill">공유 링크</text>
+        <text x="785" y="260" text-anchor="middle" font-size="11" class="a-fill">건수 집계 화면</text>
+      </svg>
+      <figcaption>원본 엑셀은 웹하드에만 남고, 배포되는 화면에는 건수만 들어갑니다.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2><span class="n">02</span> 어디에 무엇이 남는가</h2>
+    <table>
+      <thead>
+        <tr><th>대상</th><th>보관 위치</th><th>개인정보</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>엑셀 원본</td>
+          <td>웹하드<span style="display:block;color:var(--ink-3);font-size:13px">일자별 파일로 누적</span></td>
+          <td><span class="tag has">이름 · 전화번호 포함</span></td>
+        </tr>
+        <tr>
+          <td>집계 화면</td>
+          <td>공유 링크<span style="display:block;color:var(--ink-3);font-size:13px">매일 같은 주소에 갱신</span></td>
+          <td><span class="tag none">없음 — 날짜 · 경로 · 건수</span></td>
+        </tr>
+        <tr>
+          <td>매크로 PC</td>
+          <td>아무것도 남기지 않음</td>
+          <td><span class="tag none">없음</span></td>
+        </tr>
+      </tbody>
+      <caption>
+        집계 화면에 들어가는 값은 <span style="font-family:var(--font-num)">날짜 · 유입경로 · 건수</span> 세 가지뿐입니다.
+        고객 개인정보는 웹하드 밖으로 나가지 않습니다. 협력점해피콜은 집계에서 제외합니다.
+      </caption>
+    </table>
+  </section>
+
+  <section>
+    <h2><span class="n">03</span> 확인 부탁드리는 것</h2>
+    <ol class="asks">
+      <li>남는 <strong>매크로 PC</strong>에서 돌려도 될까요?
+        <span class="why">하드보안관 · 도큐레이 둘 다 설치되어 있지 않은 PC입니다.</span></li>
+      <li>그 PC에 <strong>웹하드를 연결</strong>해도 될까요?
+        <span class="why">받은 엑셀을 바로 웹하드에 저장하기 위해 필요합니다.</span></li>
+      <li>웹하드에 <strong>일자별 통합고객목록이 쌓여도</strong> 될까요?
+        <span class="why">하루 한 파일씩 누적됩니다.</span></li>
+      <li>그 PC에 <strong>프로그램 하나 설치</strong>해도 될까요?
+        <span class="why">Node.js라는 무료 개발도구입니다. 집계 화면을 링크로 올리는 데 씁니다. 불가하면 웹하드에 파일로 두는 방식으로 대체 가능합니다.</span></li>
+    </ol>
+  </section>
+
+  <footer>
+    완성 화면은 이미 만들어 두었습니다. 아래에서 미리 보실 수 있습니다 (숫자는 샘플입니다).<br>
+    <a href="https://claude.ai/code/artifact/093f0a30-5699-424a-aa82-591b8c308d56">일자별 DB 수량 — 미리보기</a>
+  </footer>
+</main>
