@@ -51,6 +51,9 @@ $VercelToken = $env:VERCEL_TOKEN
 # ─────────────────────────────────────────────────
 
 $ErrorActionPreference = "Stop"
+
+# node 는 UTF-8 로 출력하는데 PowerShell 5.1 은 시스템 기본 인코딩으로 읽어 한글이 깨진다.
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $log = New-Object System.Collections.Generic.List[string]
 
 # 로그는 여기 한 곳에만 쌓는다. 수집기도 같은 파일에 이어 쓴다.
@@ -91,6 +94,8 @@ if ($SkipCollect) {
     if ($PSBoundParameters.ContainsKey("Start")) { $collectArgs += @("-Start", $Start.ToString("yyyy-MM-dd")) }
 
     Say "수집 시작" "Cyan"
+    $log | Out-File $LogFile -Encoding utf8 -Append    # 수집기가 이어 쓰기 전에 여기까지 먼저 남긴다
+    $log.Clear()
     & powershell @collectArgs
     if ($LASTEXITCODE -ne 0) { Say "수집이 정상 종료되지 않았습니다 (코드 $LASTEXITCODE). 받아둔 파일만으로 계속합니다." "Yellow" }
 }

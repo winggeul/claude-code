@@ -37,6 +37,9 @@ param(
     # 로그를 남길 파일. 주지 않으면 스크립트 옆 logs 폴더에 만든다.
     [string]$LogFile,
 
+    # 등록일 체크박스 상태를 기억해 두는 파일. 창을 계속 열어 두고 반복 실행할 때 쓴다.
+    [string]$StateFile,
+
     # 단계 사이 기본 대기(초). 서버가 느리면 늘린다.
     [int]$Wait = 2
 )
@@ -382,12 +385,20 @@ Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 �
 Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
-$script:Settled = $false
-if (-not $SkipDateCheck) {
-    Click-Ctrl (Need $ctrls "DateCheck")
-    Write-Log "등록일 조건을 켰습니다. 이미 켜져 있었다면 첫 날짜에서 되돌립니다." "Yellow"
-} else {
+# 체크박스 상태는 읽을 수 없다. 대신 지난 실행이 어떻게 끝났는지를 적어 두고 그것을 믿는다.
+# 창을 계속 열어 둔 채 다시 실행하면 이미 켜져 있으므로, 누르면 오히려 꺼진다.
+if (-not $StateFile) {
+    $StateFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "state.txt"
+}
+$wasOn = (Test-Path $StateFile) -and ((Get-Content $StateFile -ErrorAction SilentlyContinue) -eq "datecheck=on")
+
+if ($SkipDateCheck) {
     Write-Log "등록일 체크박스는 건드리지 않습니다."
+} elseif ($wasOn) {
+    Write-Log "등록일 조건이 지난 실행에서 켜진 채 끝났으므로 그대로 둡니다."
+} else {
+    Click-Ctrl (Need $ctrls "DateCheck")
+    Write-Log "등록일 조건을 켰습니다." "Yellow"
 }
 
 $ok = 0; $empty = 0; $failed = 0
@@ -478,7 +489,7 @@ while ($day -le $End.Date) {
             if (Test-FileDate $dest $day) {
                 Write-Log "$stamp 저장 완료 ($count 건)" "Green"
                 $ok++; $done = $true
-                $script:Settled = $true
+                "datecheck=on" | Out-File $StateFile -Encoding ascii
             } else {
                 Remove-Item $dest -Force
                 throw "받아온 자료의 등록일이 $stamp 이 아닙니다."
