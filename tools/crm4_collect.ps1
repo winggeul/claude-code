@@ -59,6 +59,22 @@ public class C4 {
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, IntPtr e);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct SYSTEMTIME {
+        public ushort wYear, wMonth, wDayOfWeek, wDay, wHour, wMinute, wSecond, wMilliseconds;
+    }
+    [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, ref SYSTEMTIME st);
+
+    public static bool SetDate(IntPtr h, int y, int m, int d) {
+        SYSTEMTIME st = new SYSTEMTIME();
+        st.wYear = (ushort)y; st.wMonth = (ushort)m; st.wDay = (ushort)d;
+        return SendMessage(h, 0x1002, (IntPtr)0, ref st) != IntPtr.Zero;   // DTM_SETSYSTEMTIME
+    }
+    public static string GetDate(IntPtr h) {
+        SYSTEMTIME st = new SYSTEMTIME();
+        IntPtr r = SendMessage(h, 0x1001, (IntPtr)0, ref st);              // DTM_GETSYSTEMTIME
+        if (r.ToInt64() != 0) return "(비어있음)";
+        return st.wYear.ToString("D4") + "-" + st.wMonth.ToString("D2") + "-" + st.wDay.ToString("D2");
+    }
     public static string ClassOf(IntPtr h){ StringBuilder s=new StringBuilder(256); GetClassName(h,s,256); return s.ToString(); }
     public static string TextOf(IntPtr h){ StringBuilder s=new StringBuilder(1024); GetWindowText(h,s,1024); return s.ToString(); }
 }
@@ -242,10 +258,29 @@ function Switch-Tab([IntPtr]$win, [string]$name) {
     return $c
 }
 
-function Set-DatePicker($ctrl, [datetime]$value) {
-    Click-Ctrl $ctrl 12                        # 왼쪽 끝 = 연도 칸
-    Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
-    Start-Sleep -Milliseconds 300
+# 메시지로 넣어 보고, 되읽어서 확인하고, 안 들어갔으면 타이핑으로 다시 시도한다.
+# 넣었다고 믿고 넘어가면 엉뚱한 날짜로 검색해도 알 수가 없다.
+function Set-DatePicker($ctrl, [datetime]$value, [string]$label) {
+    $want = $value.ToString("yyyy-MM-dd")
+
+    [void][C4]::SetDate($ctrl.H, $value.Year, $value.Month, $value.Day)
+    Start-Sleep -Milliseconds 250
+    $got = [C4]::GetDate($ctrl.H)
+
+    if ($got -ne $want) {
+        Click-Ctrl $ctrl 12                    # 왼쪽 끝 = 연도 칸
+        Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
+        Start-Sleep -Milliseconds 400
+        $got = [C4]::GetDate($ctrl.H)
+    }
+
+    if ($got -ne $want) { throw "$label 날짜가 $want 로 안 들어갔습니다. 현재 값: $got" }
+    Write-Log "  $label = $got"
+}
+
+# WinForms 체크박스는 상태를 못 읽는 경우가 있다. 읽히면 그 값을 쓰고, 안 읽히면 로그로 남긴다.
+function Get-CheckState($ctrl) {
+    return [C4]::SendMessage($ctrl.H, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt32()   # BM_GETCHECK
 }
 
 # 검색은 서버 왕복이라 걸리는 시간이 일정하지 않다. 고정 대기 대신 건수 라벨이 멈출 때까지 본다.
@@ -339,8 +374,15 @@ Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
 if (-not $SkipDateCheck) {
-    Click-Ctrl (Need $ctrls "DateCheck")
-    Write-Log "등록일 조건을 켰습니다. 첫 실행 시 체크 상태를 눈으로 확인하세요." "Yellow"
+    $chk = Need $ctrls "DateCheck"
+    $before = Get-CheckState $chk
+    if ($before -ne 1) {
+        Click-Ctrl $chk
+        $after = Get-CheckState $chk
+        Write-Log "등록일 조건 체크: $before -> $after" "Yellow"
+    } else {
+        Write-Log "등록일 조건이 이미 켜져 있습니다." "Yellow"
+    }
 }
 
 $ok = 0; $empty = 0; $failed = 0
@@ -360,8 +402,8 @@ while ($day -le $End.Date) {
         Start-Sleep -Milliseconds 400
 
         $c = Switch-Tab $win "Filter"
-        Set-DatePicker (Need $c "DateFrom") $day
-        Set-DatePicker (Need $c "DateTo") $day
+        Set-DatePicker (Need $c "DateFrom") $day "시작일"
+        Set-DatePicker (Need $c "DateTo") $day "종료일"
 
         Click-Ctrl (Need $c "Search")
         $count = Wait-Search $win
@@ -409,6 +451,25 @@ while ($day -le $End.Date) {
                 Move-Item $fresh.FullName $dest -Force
                 Write-Log "$stamp 파일명 정리: $($fresh.Name) -> $(Split-Path $dest -Leaf)"
             }
+        }
+
+        # 저장이 끝나면 '엑셀 다운로드 성공' 안내창이 뜬다. 닫지 않으면 다음 날짜로 못 넘어간다.
+        $notice = @(Get-TopWindows | Where-Object {
+            $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Handle -ne $win -and
+            $_.Class -ne "#32770" -and $_.Title -notlike "*통합고객목록*"
+        })
+        foreach ($n in @(Get-TopWindows | Where-Object { $_.OwnerPid -eq $proc.Id -and $_.Visible -and $_.Class -eq "#32770" })) {
+            [void][C4]::SetForegroundWindow($n.Handle)
+            Start-Sleep -Milliseconds 300
+            Send-Keys "{ENTER}" $n.Handle
+            Start-Sleep -Milliseconds 400
+        }
+        if ($notice.Count -gt 0) {
+            [void][C4]::SetForegroundWindow($notice[0].Handle)
+            Start-Sleep -Milliseconds 300
+            Send-Keys "{ENTER}" $notice[0].Handle
+            Start-Sleep -Milliseconds 400
+            Write-Log "안내창을 닫았습니다."
         }
 
         if (Test-Path $dest) { Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++ }
