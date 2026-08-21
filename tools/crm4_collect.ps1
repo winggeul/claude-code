@@ -1,60 +1,42 @@
 ﻿<#
-통합고객목록 자동 수집기
+통합고객목록에서 날짜별로 CSV 를 내려받는다.
 
 등록일을 하루씩 밀며 [검색 → 목록 탭 → 전체선택 → 처리 탭 → Excel → 저장] 을 반복한다.
-74 만 건을 한 번에 받지 않고 날짜로 자르는 이유는 화면이 그만큼을 한 번에 못 받기 때문이다.
 
-컨트롤 식별자는 crm4_probe.ps1 덤프에서 확인한 실제 값이다.
-설치할 것 없이 PowerShell 만으로 동작한다.
+컨트롤을 GetDlgCtrlID 번호로 찾지 않는다. 이 프로그램의 컨트롤 번호는 창을 새로 열 때마다
+달라져서, 한 번 뽑아 둔 번호가 다음 실행에서는 맞지 않는다. 대신 창에 적힌 글자와 클래스,
+그리고 서로의 위치 관계로 찾는다. 이것들은 창을 다시 열어도 그대로다.
 
-사용법:
-    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot D:\CRM원본
-    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot D:\CRM원본 -Start 2026-08-01 -End 2026-08-20
+사용:
+    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot C:\CRM자동화\raw
+    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot ... -Start 2026-07-01 -End 2026-08-21
+    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot ... -Diagnose    클릭 없이 인식만 확인
 #>
 
 param(
-    # 수집할 등록일 범위. 기본은 어제 하루.
-    [datetime]$Start = (Get-Date).Date.AddDays(-1),
-    [datetime]$End   = (Get-Date).Date.AddDays(-1),
-
-    # 내려받은 엑셀 원본이 쌓이는 곳. 이름·전화번호가 그대로 들어 있으므로
-    # 반드시 수집 PC 내부 경로여야 한다. 웹하드나 공유 폴더를 지정하면 안 된다.
-    # 웹하드에 올라가는 것은 이 원본을 집계해서 만든 건수 파일뿐이다.
+    # 내려받은 CSV 가 쌓이는 곳. 없는 폴더면 만들지 않고 멈춘다.
     [Parameter(Mandatory = $true)]
     [string]$RawRoot,
 
-    # 등록일 조건 체크박스를 스크립트가 켤지 여부. 이미 켜 둔 상태라면 -SkipDateCheck 로 끈다.
+    # 수집할 등록일 범위. -Start 를 주지 않으면 마지막으로 받은 날 다음날부터 이어받는다.
+    [datetime]$Start,
+    [datetime]$End = (Get-Date).Date.AddDays(-1),
+
+    # 클릭을 전혀 하지 않고, 컨트롤을 제대로 찾는지만 확인한다.
+    [switch]$Diagnose,
+
+    # 등록일 조건 체크박스를 스크립트가 켜지 않는다. 이미 켜 둔 경우.
     [switch]$SkipDateCheck,
 
-    # 처리 탭의 Excel 이 '선택한 고객' 기준으로 동작하는 경우를 대비해 전체선택을 먼저 누른다.
+    # 목록 탭의 전체선택을 누르지 않는다.
     [switch]$SkipSelectAll,
 
-    # 클릭 없이 창과 컨트롤만 확인한다. 처음 쓸 때 이걸로 먼저 점검할 것.
-    [switch]$DryRun,
-
-    # 각 단계 사이 기본 대기(초). 서버가 느리면 늘린다.
+    # 단계 사이 기본 대기(초). 서버가 느리면 늘린다.
     [int]$Wait = 2
 )
 
-# ─────────── 컨트롤 식별자 (probe 덤프 실측값) ───────────
-
-$ID = @{
-    Tab         = 16       # SysTabControl32
-    PageFilter  = 527392   # 고객조건 페이지
-    PageList    = 199984   # 목록 페이지
-    PageProcess = 592892   # 처리 페이지
-    DateCheck   = 68906    # '등록일' 체크박스
-    DateFrom    = 68896    # SysDateTimePick32
-    DateTo      = 68902    # SysDateTimePick32
-    Search      = 724064   # 검색 버튼
-    CountLabel  = 199986   # '전체고객 : ... 조회고객 : N 명'
-    SelectAll   = 396598   # 전체선택
-    Excel       = 68956    # 처리 탭 기능 그룹의 Excel 버튼
-}
-
+# 탭 순서는 창 구성이라 바뀌지 않는다.
 $TabIndex = @{ Filter = 0; List = 4; Process = 5 }
-
-# ─────────── Win32 ───────────
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type @"
@@ -67,7 +49,6 @@ public class C4 {
     [DllImport("user32.dll")] public static extern bool EnumChildWindows(IntPtr h, EnumProc cb, IntPtr p);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder s, int n);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
-    [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr h);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
@@ -89,9 +70,8 @@ function Write-Log([string]$msg, [string]$color = "Gray") {
     $script:Log += $line
 }
 
-# PowerShell 스크립트블록을 델리게이트로 넘기면, 콜백 안에서 그 함수의 지역 변수가
-# 보이지 않는 경우가 있다. 그래서 콜백에서는 스크립트 범위 변수에 담기만 하고
-# 조건 판단은 전부 콜백 바깥에서 한다.
+# 델리게이트 콜백 안에서는 함수의 지역 변수가 보이지 않을 수 있다.
+# 콜백은 담기만 하고, 판단은 바깥에서 한다.
 
 function Get-TopWindows {
     $script:tops = @()
@@ -100,10 +80,8 @@ function Get-TopWindows {
         $o = 0
         [void][C4]::GetWindowThreadProcessId($h, [ref]$o)
         $script:tops += [pscustomobject]@{
-            Handle  = $h
-            OwnerPid= [int]$o
-            Title   = [C4]::TextOf($h)
-            Class   = [C4]::ClassOf($h)
+            Handle = $h; OwnerPid = [int]$o
+            Title = [C4]::TextOf($h); Class = [C4]::ClassOf($h)
             Visible = [C4]::IsWindowVisible($h)
         }
         return $true
@@ -120,89 +98,144 @@ function Find-MainWindow([int]$processId) {
     return [IntPtr]::Zero
 }
 
-function Update-ControlMap([IntPtr]$root) {
-    $script:ctrls = @{}
+function Get-Descendants([IntPtr]$root) {
+    $script:kids = @()
     $cb = [C4+EnumProc]{
         param($h, $l)
-        $script:ctrls[[C4]::GetDlgCtrlID($h)] = $h
+        $r = New-Object C4+RECT
+        [void][C4]::GetWindowRect($h, [ref]$r)
+        $script:kids += [pscustomobject]@{
+            H = $h
+            Class = [C4]::ClassOf($h)
+            Text  = [C4]::TextOf($h)
+            L = $r.Left; T = $r.Top; R = $r.Right; B = $r.Bottom
+            W = $r.Right - $r.Left; Ht = $r.Bottom - $r.Top
+            Visible = [C4]::IsWindowVisible($h)
+        }
         return $true
     }
     [void][C4]::EnumChildWindows($root, $cb, [IntPtr]::Zero)
-    return $script:ctrls.Count
+    return $script:kids
 }
 
-function Get-Control([IntPtr]$root, [int]$controlId) {
-    if (-not $script:ctrls -or -not $script:ctrls.ContainsKey($controlId)) {
-        [void](Update-ControlMap $root)
+<#
+글자와 위치로 컨트롤을 집는다.
+
+  탭          클래스가 SysTabControl32 인 것
+  각 탭 페이지 글자가 '고객조건' / '목록' / '처리' 인 컨테이너
+  등록일 체크  글자가 '등록일' 인 BUTTON
+  날짜 두 칸   SysDateTimePick32 중 등록일 체크와 같은 줄에 있는 것, 왼쪽부터 시작/종료
+  검색 버튼    탭 위쪽에 떠 있는 작은 버튼 중 가장 오른쪽
+  건수 라벨    '조회고객' 이 적힌 STATIC
+  전체선택     글자가 '전체선택' 인 BUTTON
+  Excel       '기능' 상자 안의 버튼 두 개 중 오른쪽 (왼쪽은 SMS)
+#>
+function Resolve-Controls([IntPtr]$win) {
+    $all = Get-Descendants $win
+    $c = @{}
+
+    $tab = $all | Where-Object { $_.Class -match "SysTabControl32" } | Select-Object -First 1
+    $c.Tab = $tab
+
+    foreach ($p in @(@("PageFilter","고객조건"), @("PageList","목록"), @("PageProcess","처리"))) {
+        $c[$p[0]] = $all | Where-Object { $_.Text -eq $p[1] -and $_.W -gt 400 } | Select-Object -First 1
     }
-    if (-not $script:ctrls.ContainsKey($controlId)) {
-        throw "컨트롤 $controlId 을 찾지 못했습니다."
+
+    $chk = $all | Where-Object { $_.Class -match "BUTTON" -and $_.Text -eq "등록일" } | Select-Object -First 1
+    $c.DateCheck = $chk
+
+    if ($chk) {
+        $picks = @($all | Where-Object {
+            $_.Class -match "SysDateTimePick32" -and [Math]::Abs($_.T - $chk.T) -le 8
+        } | Sort-Object L)
+        if ($picks.Count -ge 2) { $c.DateFrom = $picks[0]; $c.DateTo = $picks[1] }
     }
-    return $script:ctrls[$controlId]
+
+    $c.CountLabel = $all | Where-Object { $_.Class -match "STATIC" -and $_.Text -match "조회고객" } | Select-Object -First 1
+    $c.SelectAll  = $all | Where-Object { $_.Class -match "BUTTON" -and $_.Text -eq "전체선택" } | Select-Object -First 1
+
+    if ($tab) {
+        $c.Search = $all | Where-Object {
+            $_.Visible -and $_.Text -eq "" -and $_.B -le $tab.T -and
+            $_.W -ge 40 -and $_.W -le 140 -and $_.Ht -ge 14 -and $_.Ht -le 40
+        } | Sort-Object R -Descending | Select-Object -First 1
+    }
+
+    $grp = $all | Where-Object { $_.Text -eq "기능" } | Select-Object -First 1
+    if ($grp) {
+        $btns = @($all | Where-Object {
+            $_.H -ne $grp.H -and $_.L -ge $grp.L -and $_.R -le $grp.R -and
+            $_.T -ge $grp.T -and $_.B -le $grp.B -and $_.W -ge 30 -and $_.Ht -ge 14
+        } | Sort-Object L)
+        if ($btns.Count -ge 2) { $c.Excel = $btns[1] } elseif ($btns.Count -eq 1) { $c.Excel = $btns[0] }
+    }
+
+    $c.Count = $all.Count
+    return $c
 }
 
-# 이 프로그램의 버튼은 대부분 직접 그린 컨트롤이라 BM_CLICK 이 통하지 않는다.
-# 실행 시점의 좌표를 다시 읽어 실제 마우스로 누른다. 창을 옮겨도 스스로 맞춰진다.
-function Click-Control([IntPtr]$h, [int]$offsetX = 0) {
-    # 좌표로 누르는 방식이라, 대상 창이 맨 앞이 아니면 엉뚱한 창을 클릭하게 된다.
-    # SetForegroundWindow 는 윈도우 정책상 조용히 실패할 수 있으므로 매번 확인하고,
-    # 확인이 안 되면 클릭하지 않고 즉시 중단한다.
-    $fg = [C4]::GetForegroundWindow()
-    if ($fg -ne $script:TargetWindow) {
+function Need($ctrls, [string]$name) {
+    if (-not $ctrls[$name]) { throw "$name 을(를) 찾지 못했습니다." }
+    return $ctrls[$name]
+}
+
+# 좌표로 누르는 방식이라 대상 창이 맨 앞이 아니면 엉뚱한 창을 클릭하게 된다.
+# SetForegroundWindow 는 조용히 실패할 수 있으므로 매번 확인하고, 아니면 누르지 않고 멈춘다.
+function Click-Ctrl($ctrl, [int]$offsetX = 0) {
+    if ([C4]::GetForegroundWindow() -ne $script:TargetWindow) {
         throw "통합고객목록 창이 맨 앞이 아닙니다. 다른 창을 클릭할 위험이 있어 중단합니다."
     }
-
     $r = New-Object C4+RECT
-    [void][C4]::GetWindowRect($h, [ref]$r)
+    [void][C4]::GetWindowRect($ctrl.H, [ref]$r)      # 창을 옮겼을 수 있으니 지금 좌표를 다시 읽는다
     $x = if ($offsetX -gt 0) { $r.Left + $offsetX } else { [int](($r.Left + $r.Right) / 2) }
     $y = [int](($r.Top + $r.Bottom) / 2)
     [void][C4]::SetCursorPos($x, $y)
     Start-Sleep -Milliseconds 150
-    [C4]::mouse_event(0x02, 0, 0, 0, [IntPtr]::Zero)   # LEFTDOWN
+    [C4]::mouse_event(0x02, 0, 0, 0, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 60
-    [C4]::mouse_event(0x04, 0, 0, 0, [IntPtr]::Zero)   # LEFTUP
+    [C4]::mouse_event(0x04, 0, 0, 0, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 400
 }
 
-# 탭 전환 후 해당 페이지가 실제로 보이는지로 성공을 확인한다.
-function Switch-Tab([IntPtr]$win, [string]$name) {
-    $tab = Get-Control $win $ID.Tab
-    [void][C4]::SendMessage($tab, 0x1330, [IntPtr]$TabIndex[$name], [IntPtr]::Zero)  # TCM_SETCURFOCUS
-    Start-Sleep -Milliseconds 700
-
-    $page = Get-Control $win $ID["Page$name"]
-    if (-not [C4]::IsWindowVisible($page)) { throw "$name 탭으로 전환하지 못했습니다." }
-}
-
-# 키 입력도 포커스가 엉뚱한 곳이면 그대로 그 창에 타이핑된다. 같은 확인을 거친다.
-function Send-Keys([string]$keys, [IntPtr]$expectWindow) {
-    if ([C4]::GetForegroundWindow() -ne $expectWindow) {
+function Send-Keys([string]$keys, [IntPtr]$expect) {
+    if ([C4]::GetForegroundWindow() -ne $expect) {
         throw "입력 대상 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
     }
     [System.Windows.Forms.SendKeys]::SendWait($keys)
 }
 
-function Set-DatePicker([IntPtr]$h, [datetime]$value) {
-    Click-Control $h 12                      # 왼쪽 끝 = 연도 칸
+# 탭을 바꾸면 그 페이지에서만 만들어지는 컨트롤이 있으므로 매번 다시 찾는다.
+function Switch-Tab([IntPtr]$win, [string]$name) {
+    $c = Resolve-Controls $win
+    $tab = Need $c "Tab"
+    [void][C4]::SendMessage($tab.H, 0x1330, [IntPtr]$TabIndex[$name], [IntPtr]::Zero)   # TCM_SETCURFOCUS
+    Start-Sleep -Milliseconds 700
+
+    $c = Resolve-Controls $win
+    $page = Need $c "Page$name"
+    if (-not [C4]::IsWindowVisible($page.H)) { throw "$name 탭으로 전환하지 못했습니다." }
+    return $c
+}
+
+function Set-DatePicker($ctrl, [datetime]$value) {
+    Click-Ctrl $ctrl 12                        # 왼쪽 끝 = 연도 칸
     Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
     Start-Sleep -Milliseconds 300
 }
 
-# 검색은 서버 왕복이라 시간이 들쭉날쭉하다. 카운트 라벨이 멈출 때까지 기다린다.
+# 검색은 서버 왕복이라 걸리는 시간이 일정하지 않다. 고정 대기 대신 건수 라벨이 멈출 때까지 본다.
 function Wait-Search([IntPtr]$win, [int]$timeoutSec = 180) {
-    $label = Get-Control $win $ID.CountLabel
-    $stable = 0
-    $prev = $null
     $deadline = (Get-Date).AddSeconds($timeoutSec)
+    $stable = 0; $prev = $null
 
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 1
-        $now = [C4]::TextOf($label)
+        $c = Resolve-Controls $win
+        $now = if ($c.CountLabel) { [C4]::TextOf($c.CountLabel.H) } else { "" }
         if ($now -eq $prev -and $now -match "조회고객") { $stable++ } else { $stable = 0 }
         $prev = $now
         if ($stable -ge 3) { break }
     }
-
     if ($prev -match "조회고객\s*:\s*([\d,]+)") { return [int]($Matches[1] -replace ",", "") }
     return -1
 }
@@ -216,34 +249,30 @@ $win = Find-MainWindow $proc.Id
 if ($win -eq [IntPtr]::Zero) {
     Write-Host "통합고객목록 창을 열어주세요. (고객관리 > 통합고객목록)" -ForegroundColor Red; exit 1
 }
-
-$n = Update-ControlMap $win
-Write-Host "컨트롤 $n 개를 찾았습니다." -ForegroundColor Gray
-if ($n -lt 50) { Write-Host "컨트롤이 너무 적습니다. 통합고객목록 창이 맞는지 확인하세요." -ForegroundColor Yellow }
+$script:TargetWindow = $win
 
 if (-not (Test-Path $RawRoot)) {
     Write-Host "원본 저장 폴더가 없습니다: $RawRoot" -ForegroundColor Red
-    Write-Host "폴더를 직접 만드시거나, -OutputRoot 로 쓸 경로를 지정하세요." -ForegroundColor Yellow
-    Write-Host "예: -RawRoot ""D:\CRM원본""" -ForegroundColor Yellow
+    Write-Host "폴더를 직접 만드시거나, -RawRoot 로 쓸 경로를 지정하세요." -ForegroundColor Yellow
     exit 1
 }
 
-if ($DryRun) {
-    Write-Host "점검 모드 - 클릭하지 않습니다." -ForegroundColor Cyan
-    foreach ($k in $ID.Keys) {
-        try {
-            $h = Get-Control $win $ID[$k]
-            $r = New-Object C4+RECT; [void][C4]::GetWindowRect($h, [ref]$r)
-            Write-Host ("  OK   {0,-10} id={1,-8} rect=({2},{3})" -f $k, $ID[$k], $r.Left, $r.Top) -ForegroundColor Green
-        } catch {
-            Write-Host ("  실패 {0,-10} id={1}" -f $k, $ID[$k]) -ForegroundColor Red
-        }
+$ctrls = Resolve-Controls $win
+Write-Host "컨트롤 $($ctrls.Count) 개 중에서 찾은 결과:" -ForegroundColor Gray
+foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFrom","DateTo","Search","CountLabel","SelectAll","Excel")) {
+    if ($ctrls[$k]) {
+        Write-Host ("  OK   {0,-12} ({1},{2}) {3}" -f $k, $ctrls[$k].L, $ctrls[$k].T, $ctrls[$k].Class.Split('.')[1]) -ForegroundColor Green
+    } else {
+        Write-Host ("  실패 {0,-12}" -f $k) -ForegroundColor Red
     }
-    exit 0
 }
 
-# -Start 를 직접 주지 않았으면 이미 받아둔 마지막 날 다음날부터 어제까지를 메운다.
-# PC 가 며칠 꺼져 있었더라도 다음에 켜질 때 밀린 날짜가 한 번에 따라잡힌다.
+if ($Diagnose) { Write-Host "`n점검 모드였습니다. 클릭하지 않았습니다." -ForegroundColor Cyan; exit 0 }
+
+foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFrom","DateTo","Search","CountLabel","Excel")) {
+    if (-not $ctrls[$k]) { Write-Host "`n$k 을(를) 찾지 못해 중단합니다." -ForegroundColor Red; exit 1 }
+}
+
 if (-not $PSBoundParameters.ContainsKey('Start')) {
     $done = Get-ChildItem $RawRoot -Filter "customers_*.csv" -ErrorAction SilentlyContinue |
             ForEach-Object { if ($_.BaseName -match '(\d{4}-\d{2}-\d{2})') { [datetime]$Matches[1] } } |
@@ -251,36 +280,29 @@ if (-not $PSBoundParameters.ContainsKey('Start')) {
     if ($done) {
         $Start = $done.AddDays(1)
         Write-Host "마지막 수집일: $($done.ToString('yyyy-MM-dd')) - 그 다음날부터 이어받습니다." -ForegroundColor Gray
+    } else {
+        $Start = $End
     }
 }
-
-if ($Start -gt $End) {
-    Write-Host "받을 날짜가 없습니다. 이미 어제까지 다 받았습니다." -ForegroundColor Green
-    exit 0
-}
+if ($Start -gt $End) { Write-Host "받을 날짜가 없습니다." -ForegroundColor Green; exit 0 }
 
 Write-Log "수집 시작: $($Start.ToString('yyyy-MM-dd')) ~ $($End.ToString('yyyy-MM-dd'))" "Cyan"
-Write-Log "원본 저장 위치(수집 PC 내부): $RawRoot" "Cyan"
-
-$script:TargetWindow = $win
+Write-Log "저장 위치: $RawRoot" "Cyan"
 
 [void][C4]::SetForegroundWindow($win)
 Start-Sleep -Seconds 2
-
 if ([C4]::GetForegroundWindow() -ne $win) {
     Write-Host "통합고객목록 창을 맨 앞으로 가져오지 못했습니다." -ForegroundColor Red
     Write-Host "창을 직접 한 번 클릭해 활성화한 뒤 다시 실행하세요." -ForegroundColor Yellow
     exit 1
 }
 
-if (-not $DryRun) {
-    Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 마세요. (Ctrl+C 로 취소)" -ForegroundColor Yellow
-    Start-Sleep -Seconds 5
-}
+Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 마세요. (Ctrl+C 로 취소)" -ForegroundColor Yellow
+Start-Sleep -Seconds 5
 
-Switch-Tab $win "Filter"
+$ctrls = Switch-Tab $win "Filter"
 if (-not $SkipDateCheck) {
-    Click-Control (Get-Control $win $ID.DateCheck)
+    Click-Ctrl (Need $ctrls "DateCheck")
     Write-Log "등록일 조건을 켰습니다. 첫 실행 시 체크 상태를 눈으로 확인하세요." "Yellow"
 }
 
@@ -298,11 +320,13 @@ while ($day -le $End.Date) {
 
     try {
         [void][C4]::SetForegroundWindow($win)
-        Switch-Tab $win "Filter"
-        Set-DatePicker (Get-Control $win $ID.DateFrom) $day
-        Set-DatePicker (Get-Control $win $ID.DateTo) $day
+        Start-Sleep -Milliseconds 400
 
-        Click-Control (Get-Control $win $ID.Search)
+        $c = Switch-Tab $win "Filter"
+        Set-DatePicker (Need $c "DateFrom") $day
+        Set-DatePicker (Need $c "DateTo") $day
+
+        Click-Ctrl (Need $c "Search")
         $count = Wait-Search $win
 
         if ($count -eq 0) {
@@ -312,16 +336,16 @@ while ($day -le $End.Date) {
         Write-Log "$stamp 조회 $count 건" "White"
 
         if (-not $SkipSelectAll) {
-            Switch-Tab $win "List"
-            Click-Control (Get-Control $win $ID.SelectAll)
+            $c = Switch-Tab $win "List"
+            Click-Ctrl (Need $c "SelectAll")
         }
 
-        Switch-Tab $win "Process"
+        $c = Switch-Tab $win "Process"
         $started = Get-Date
-        Click-Control (Get-Control $win $ID.Excel)
+        Click-Ctrl (Need $c "Excel")
         Start-Sleep -Seconds $Wait
 
-        # 저장 대화상자(#32770)가 뜨면 경로를 넣고 저장한다.
+        # 저장 대화상자(#32770)를 기다린다.
         $dlg = [IntPtr]::Zero
         $deadline = (Get-Date).AddSeconds(30)
         while ((Get-Date) -lt $deadline -and $dlg -eq [IntPtr]::Zero) {
@@ -339,11 +363,10 @@ while ($day -le $End.Date) {
         Send-Keys "{ENTER}" $dlg
         Start-Sleep -Seconds ($Wait * 2)
 
-        # 프로그램이 확장자나 이름을 제 방식대로 붙일 수 있다. 지정한 이름이 없으면
-        # 방금 생긴 파일을 찾아 이름을 맞춘다.
+        # 프로그램이 이름이나 확장자를 제 방식대로 붙일 수 있다. 없으면 방금 생긴 파일을 찾아 맞춘다.
         if (-not (Test-Path $dest)) {
             $fresh = Get-ChildItem $RawRoot -File -ErrorAction SilentlyContinue |
-                     Where-Object { $_.LastWriteTime -gt $started -and $_.Name -ne (Split-Path $dest -Leaf) } |
+                     Where-Object { $_.LastWriteTime -gt $started } |
                      Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($fresh) {
                 Move-Item $fresh.FullName $dest -Force
@@ -351,11 +374,8 @@ while ($day -le $End.Date) {
             }
         }
 
-        if (Test-Path $dest) {
-            Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++
-        } else {
-            Write-Log "$stamp 저장 확인 실패 - 파일이 없습니다" "Red"; $failed++
-        }
+        if (Test-Path $dest) { Write-Log "$stamp 저장 완료 ($count 건)" "Green"; $ok++ }
+        else { Write-Log "$stamp 저장 확인 실패 - 파일이 없습니다" "Red"; $failed++ }
     }
     catch {
         Write-Log "$stamp 실패: $($_.Exception.Message)" "Red"
