@@ -15,13 +15,8 @@ import fs from "node:fs";
 import zlib from "node:zlib";
 
 // aggregate.mjs 와 같은 규칙이어야 한다. 한쪽만 바꾸면 과거분과 앞으로분의 기준이 어긋난다.
-const EXCLUDE = [
-  "협력점해피콜", "해피콜",              // 신규 인입이 아님
-  "고객관리",                            // 내부 유입
-  "아웃",                                // 아웃바운드 콜 (인입방식이 기존가입고객)
-  "우성종합통신", "휴본",                // 협력점
-  "끝판왕", "소개/끝판왕",               // 협력점
-];
+const EXCLUDE = ["협력점해피콜"];       // 신규 인입이 아니라 기존 고객 확인 전화다
+const UNSET = "미지정";                 // 유입경로가 비어 있거나 엉뚱한 값이 들어간 건
 
 
 // ── 인자 ───────────────────────────────────────────────
@@ -163,7 +158,7 @@ function resolveDate(rows, sheetName, fallbackYear) {
 // ── 유입경로 ───────────────────────────────────────────
 
 const CODE_RE = /\(\d{3,5}\)/;
-// 유입경로 칸에 전화번호가 들어간 건. 어디서 들어왔는지 알 수 없어 세지 않는다.
+// 유입경로 칸에 전화번호가 들어간 건. 그대로 두면 공개 화면에 고객 번호가 실린다.
 const PHONE_RE = /^\d{2,4}-\d{3,4}-\d{4}$/;
 
 /** 헤더가 없으므로 괄호 코드가 붙는 비율이 가장 높은 열을 유입경로로 본다. */
@@ -251,8 +246,9 @@ for (const sh of sheets) {
       const k = why + "\t" + (raw || "(비어 있음)") + "\t" + date;
       AUDIT.set(k, (AUDIT.get(k) || 0) + 1);
     }
-    if (!raw || PHONE_RE.test(raw) || EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
-    tally.set(raw, (tally.get(raw) || 0) + 1);
+    if (EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
+    const ch = (!raw || PHONE_RE.test(raw)) ? UNSET : raw;
+    tally.set(ch, (tally.get(ch) || 0) + 1);
   }
 
   const counts = [...tally].map(([channel, count]) => ({ date, channel, count }));
@@ -294,7 +290,7 @@ if (!all.length) { console.error("집계된 데이터가 없습니다."); proces
 
 const { added, updated } = mergeStore(store, all);
 store.generated = new Date().toISOString().slice(0, 19);
-store.excluded = [...EXCLUDE, "유입경로 미기재"];
+store.excluded = EXCLUDE;
 
 const days = [...new Set(store.rows.map(r => r.date))].sort();
 console.log(`\n신규 ${added} · 갱신 ${updated}`);

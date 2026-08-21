@@ -13,13 +13,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 // 집계에서 빼는 유입경로. 앞부분이 맞으면 제외한다.
-const EXCLUDE = [
-  "협력점해피콜", "해피콜",              // 신규 인입이 아님
-  "고객관리",                            // 내부 유입
-  "아웃",                                // 아웃바운드 콜 (인입방식이 기존가입고객)
-  "우성종합통신", "휴본",                // 협력점
-  "끝판왕", "소개/끝판왕",               // 협력점
-];
+const EXCLUDE = ["협력점해피콜"];       // 신규 인입이 아니라 기존 고객 확인 전화다
+const UNSET = "미지정";                 // 유입경로가 비어 있거나 엉뚱한 값이 들어간 건
 // 유입경로가 비어 있는 건은 세지 않는다. 어디서 들어왔는지 알 수 없어 비교에 쓸 수 없다.
 
 // 원본 유입경로 값을 그대로 저장한다. 이름을 묶어 보여주는 일은 화면(template.html)이 한다.
@@ -67,7 +62,7 @@ function parseCsv(text) {
 // ── 컬럼 찾기 ──────────────────────────────────────────
 
 const CODE_RE = /\(\d{3,5}\)/;
-// 유입경로 칸에 전화번호가 들어간 건. 어디서 들어왔는지 알 수 없어 세지 않는다.
+// 유입경로 칸에 전화번호가 들어간 건. 그대로 두면 공개 화면에 고객 번호가 실린다.
 const PHONE_RE = /^\d{2,4}-\d{3,4}-\d{4}$/;
 const REG_DATE_RE = /^\d{4}-\d{2}-\d{2}\s+오[전후]\s+\d{1,2}:\d{2}:\d{2}$/;
 const PLAIN_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})/;
@@ -131,7 +126,7 @@ function readFile(file) {
 
   for (const r of body) {
     const raw = (r[channel] ?? "").trim();
-    if (!raw || PHONE_RE.test(raw) || EXCLUDE.some(x => raw.startsWith(x))) continue;
+    if (EXCLUDE.some(x => raw.startsWith(x))) continue;
 
     let day = fallback;
     if (date >= 0) {
@@ -140,7 +135,7 @@ function readFile(file) {
     }
     if (!day) { skipped++; continue; }
 
-    const key = day + "\t" + raw;
+    const key = day + "\t" + ((!raw || PHONE_RE.test(raw)) ? UNSET : raw);
     tally.set(key, (tally.get(key) || 0) + 1);
   }
 
@@ -215,7 +210,7 @@ if (!store.rows.length) {
 }
 
 store.generated = new Date().toISOString().slice(0, 19);
-store.excluded = [...EXCLUDE, "유입경로 미기재"];
+store.excluded = EXCLUDE;
 
 // HTML 은 템플릿의 표시 구간만 갈아끼워 만든다.
 const tpl = fs.readFileSync(args.template, "utf8");

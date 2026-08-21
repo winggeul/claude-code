@@ -17,7 +17,7 @@
     --critical:     #d03b3b;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
     --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
-    --s9:#8c564b; --s10:#17919e;
+    --s9:#8c564b; --s10:#17919e; --s11:#7b6c00; --s12:#5b6b7a;
     --font-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
     --font-num: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   }
@@ -30,8 +30,8 @@
       --good:#0ca30c; --critical:#d03b3b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
       --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
-    --s9:#b07d75; --s10:#3ab5c2;
-      --s9:#b07d75; --s10:#3ab5c2;
+    --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
+      --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
     }
   }
   :root[data-theme="dark"] {
@@ -85,6 +85,11 @@
     border: 1px solid var(--border); color: var(--text-secondary);
     background: var(--surface-1);
   }
+  .chip.lead { border: none; background: none; color: var(--muted); padding-left: 0; }
+  .chip.close { cursor: pointer; font-family: inherit; display: inline-flex; gap: 6px; align-items: center; }
+  .chip.close:hover { color: var(--text); border-color: var(--muted); }
+  .chip.close span { color: var(--muted); font-size: 11px; }
+  #open-chips:empty { display: none; }
   .chip.warn { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
 
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 22px; }
@@ -141,6 +146,13 @@
   summary { font-size: 13px; color: var(--text-secondary); cursor: pointer; padding: 6px 0; }
   .tablewrap { overflow-x: auto; margin-top: 8px; max-height: 70vh; }
   thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+  thead th:first-child { left: 0; z-index: 4; }
+  tbody td:first-child, tfoot td:first-child {
+    position: sticky; left: 0; z-index: 2; background: var(--surface-1);
+  }
+  tbody tr.sat td:first-child { background: color-mix(in srgb, var(--s1) 6%, var(--surface-1)); }
+  tbody tr.hol td:first-child { background: color-mix(in srgb, var(--critical) 6%, var(--surface-1)); }
+  tbody tr.mrow td { z-index: 3; }
   table { border-collapse: collapse; font-size: 12px; width: 100%; }
   th, td { padding: 5px 9px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--grid); }
   th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface-1); }
@@ -191,6 +203,7 @@
   <section class="card">
     <h2>채널별 인입 수량</h2>
     <p class="note">맨 왼쪽이 그 기간의 합계이고, 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 펼친 기간에 건이 없는 채널은 열에서 빠집니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
+    <div class="chips" id="open-chips"></div>
     <div class="tablewrap" id="tablewrap"></div>
   </section>
 
@@ -204,7 +217,7 @@
 
   <section class="card">
     <h2>유입경로별 구성</h2>
-    <p class="note">건수 상위 9개 채널이 제 색을 갖고, 나머지는 <strong>그 외</strong>로 묶입니다.
+    <p class="note">건수 상위 11개 채널이 제 색을 갖고, 나머지는 <strong>그 외</strong>로 묶입니다.
       색으로 구분되는 수가 거기까지라서입니다. 위 표에는 모든 채널이 나옵니다.
       막대에 커서를 올리면 채널별 건수가 나옵니다. 위 표에서 편 달만 그립니다.</p>
     <ul class="legend" id="legend-stack"></ul>
@@ -242,19 +255,47 @@ const TYPO = new Map([
   ["타인스타그램", "인스타그램"],
   ["소중함인사이트중", "소중함인사이트"],
   ["소중함인사이트함", "소중함인사이트"],
+  ["소개/끝판왕 박선용", "끝판왕"],
+  ["끝판왕 박선화", "끝판왕"],
   ["[기타]", "기타(4016)"],              // 코드가 빠진 채 들어간 건
 ]);
 
 // 코드가 붙은 값과 안 붙은 값이 섞여 있을 뿐 같은 곳에서 온 채널. 코드별로 나누지 않는다.
 const NO_DETAIL = [/^소개$/];
 
-// 세부 항목의 열쇠. 'SOOP-PPL(1919)봉준★♨' 와 'SOOP-PPL(1919)봉준' 은 같은 코드이므로 한 줄이다.
-// 코드가 없는 값은 나눌 근거가 없으므로 채널 이름으로 합친다.
+// 닫는 괄호가 빠진 '유튜브-PPL(7126' 같은 값도 코드를 읽어야 한다.
+const CODE_IN = /\((\d{3,5})\)?/;
+const codeOf = (ch) => (ch.match(CODE_IN) || [])[1] || "";
+
+// 세부 항목의 열쇠는 '묶음 + 코드' 다.
+//   코드만으로는 안 된다. 4016 은 기타이기도 하고 유튜브-PPL 이기도 하다.
+//   이름만으로도 안 된다. 뽐쿠폰(9850) 과 뽐뿌쿠폰(9850) 은 같은 채널이다.
+// 둘을 함께 봐야 '같은 채널을 다르게 적은 것' 만 하나로 모인다.
+const SEP = "\u0000";
 function detailKeyOf(ch) {
   const g = groupOf(ch);
-  if (NO_DETAIL.some(re => re.test(g))) return g;
-  const m = ch.match(/^(.*?\(\d{3,5}\))/);
-  return m ? m[1] : g;
+  return g + SEP + (NO_DETAIL.some(re => re.test(g)) ? "" : codeOf(ch));
+}
+
+// 표기가 여럿이면 제일 많이 쓴 것을 이름으로 삼는다.
+// '유튜브-PPL(5504)' 254건과 'PPL(5504) 봉지욱…' 1건이면 앞의 것이 이름이 된다.
+function detailNames(rows) {
+  const votes = new Map();
+  for (const r of rows) {
+    const k = detailKeyOf(r.channel);
+    const head = r.channel.split("(")[0].trim();
+    const pre = TYPO.get(head) || head;
+    if (!votes.has(k)) votes.set(k, new Map());
+    const m = votes.get(k);
+    if (pre) m.set(pre, (m.get(pre) || 0) + r.count);
+  }
+  const out = new Map();
+  for (const [k, m] of votes) {
+    const [g, code] = k.split(SEP);
+    const win = [...m].sort((a, b) => b[1] - a[1])[0];
+    out.set(k, code ? `${win ? win[0] : g}(${code})` : g);
+  }
+  return out;
 }
 
 function groupOf(ch) {
@@ -297,8 +338,11 @@ function openBuckets(agg) {
   const months = monthGroups(agg);
   return months ? agg.buckets.filter(b => OPEN_MONTHS.has(monthOf(b))) : agg.buckets;
 }
-const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8","--s9","--s10"];
-const TOP_N = 9;   // + 그 외 = 10계열. 색으로 구분되는 상한이라 나머지는 묶는다.
+const SERIES_VARS = ["--s1","--s2","--s3","--s4","--s5","--s6","--s7","--s8",
+                     "--s9","--s10","--s11","--s12"];
+// + 그 외 = 12계열. 마지막 색은 늘 '그 외' 몫이라 흐린 회청색이다.
+// 색으로 구분되는 상한이 여기까지다. 표에는 모든 채널이 나온다.
+const TOP_N = 11;
 
 const EMBEDDED = /*__DATA__*/null/*__END__*/;
 
@@ -426,8 +470,11 @@ function aggregate() {
     const key = detailKeyOf(r.channel);
     m.set(key, (m.get(key) || 0) + r.count);
   }
+  const names2 = detailNames(DATA.rows);
   for (const [k, m] of detail)
-    detail.set(k, [...m.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value));
+    detail.set(k, [...m.entries()]
+      .map(([key, value]) => ({ key, name: names2.get(key) || key.split(SEP)[0], value }))
+      .sort((a, b) => b.value - a.value));
 
   return { names, allNames, buckets, totals, detail };
 }
@@ -745,11 +792,11 @@ function drawTable(agg) {
   for (const n of live) {
     // 세부도 지금 보이는 기간에 건이 있는 코드만 남긴다.
     const subs = (agg.detail.get(n) || [])
-      .filter(s => shown.some(b => (b.sub[s.name] || 0) > 0));
+      .filter(s => shown.some(b => (b.sub[s.key] || 0) > 0));
     const openable = subs.length > 1;
     const open = openable && EXPANDED.has(n);
     cols.push({ key: n, label: n, openable, open });
-    if (open) for (const s of subs) cols.push({ key: s.name, label: s.name, isSub: true });
+    if (open) for (const s of subs) cols.push({ key: s.key, label: s.name, isSub: true });
   }
 
   const cell = (b, c) => c.isSub ? (b.sub[c.key] || 0) : (b.all[c.key] || 0);
@@ -794,6 +841,20 @@ function drawTable(agg) {
       const v = shown.reduce((s, b) => s + cell(b, c), 0);
       return `<td${c.isSub ? ' class="sub"' : ""}>${fmt(v)}</td>`;
     }).join("") + `</tr>`;
+
+  // 오른쪽으로 밀어 놓으면 무엇을 펼쳤는지 안 보인다. 표 위에 붙여 둔다.
+  const openList = agg.allNames.filter(n => EXPANDED.has(n));
+  el("open-chips").innerHTML = openList.length
+    ? `<span class="chip lead">펼친 채널</span>` + openList.map(n =>
+        `<button class="chip close" data-fold="${n.replace(/"/g, "&quot;")}">${n}<span>✕</span></button>`).join("")
+    : "";
+  el("open-chips").querySelectorAll("[data-fold]").forEach(btn =>
+    btn.addEventListener("click", () => {
+      EXPANDED.delete(btn.dataset.fold);
+      const left = el("tablewrap").scrollLeft;
+      drawTable(agg);
+      el("tablewrap").scrollLeft = left;
+    }));
 
   el("tablewrap").innerHTML = `<table><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table>`;
 
