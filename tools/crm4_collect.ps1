@@ -28,8 +28,8 @@ param(
     # 이미 받아둔 날짜도 다시 받는다.
     [switch]$Force,
 
-    # 등록일 조건 체크박스를 스크립트가 켜지 않는다. 이미 켜 둔 경우.
-    [switch]$SkipDateCheck,
+    # 시작할 때 등록일 체크박스를 한 번 누른다. 꺼져 있는 상태에서 시작할 때만 쓴다.
+    [switch]$ToggleDateCheck,
 
     # 목록 탭의 전체선택을 누르지 않는다.
     [switch]$SkipSelectAll,
@@ -272,6 +272,8 @@ function Set-DatePicker($ctrl, [datetime]$value, [string]$label) {
 
     if ($got -ne $want) {
         Click-Ctrl $ctrl 12                    # 왼쪽 끝 = 연도 칸
+        Send-Keys "{ESC}" $script:TargetWindow  # 달력이 펼쳐졌으면 닫는다
+        Start-Sleep -Milliseconds 150
         Send-Keys $value.ToString("yyyyMMdd") $script:TargetWindow
         Start-Sleep -Milliseconds 400
         $got = [C4]::GetDate($ctrl.H)
@@ -385,9 +387,11 @@ Write-Host "5 초 뒤 시작합니다. 마우스와 키보드를 건드리지 �
 Start-Sleep -Seconds 5
 
 $ctrls = Switch-Tab $win "Filter"
-if (-not $SkipDateCheck) {
+if ($ToggleDateCheck) {
     Click-Ctrl (Need $ctrls "DateCheck")
-    Write-Log "등록일 조건을 눌렀습니다. 실제로 켜졌는지는 첫 파일의 날짜로 확인합니다." "Yellow"
+    Write-Log "등록일 체크박스를 한 번 눌렀습니다." "Yellow"
+} else {
+    Write-Log "등록일 조건은 건드리지 않습니다. 파일 날짜가 틀리면 그때 한 번 뒤집습니다."
 }
 
 $ok = 0; $empty = 0; $failed = 0
