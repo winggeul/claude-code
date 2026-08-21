@@ -12,7 +12,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const EXCLUDE = ["협력점해피콜"];      // 집계에서 빼는 유입경로
+// 집계에서 빼는 유입경로. 앞부분이 맞으면 제외한다.
+//   협력점해피콜 - 신규 인입이 아님
+//   고객관리     - 내부 유입
+//   아웃         - 아웃바운드 콜 (인입방식이 기존가입고객)
+const EXCLUDE = ["협력점해피콜", "고객관리", "아웃"];
 const UNSET = "미지정";                 // 유입경로가 비어 있는 건
 
 // 원본 유입경로 값을 그대로 저장한다. 이름을 묶어 보여주는 일은 화면(template.html)이 한다.
@@ -122,7 +126,7 @@ function readFile(file) {
 
   for (const r of body) {
     const raw = (r[channel] ?? "").trim();
-    if (EXCLUDE.includes(raw)) continue;
+    if (EXCLUDE.some(x => raw.startsWith(x))) continue;
 
     let day = fallback;
     if (date >= 0) {
