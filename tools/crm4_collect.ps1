@@ -257,8 +257,20 @@ if (-not (Test-Path $RawRoot)) {
     exit 1
 }
 
+# 탭을 한 번도 열지 않으면 그 페이지의 컨트롤은 아직 만들어지지 않는다.
+# 점검할 때는 탭을 차례로 넘겨보며 모은다. 탭 전환은 메시지로 하므로 마우스는 움직이지 않는다.
 $ctrls = Resolve-Controls $win
-Write-Host "컨트롤 $($ctrls.Count) 개 중에서 찾은 결과:" -ForegroundColor Gray
+$tab0 = $ctrls.Tab
+if (-not $tab0) { Write-Host "탭 컨트롤을 찾지 못했습니다. 통합고객목록 창이 맞는지 확인하세요." -ForegroundColor Red; exit 1 }
+
+foreach ($name in @("List","Process","Filter")) {
+    [void][C4]::SendMessage($tab0.H, 0x1330, [IntPtr]$TabIndex[$name], [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 600
+    $found = Resolve-Controls $win
+    foreach ($k in $found.Keys) { if ($found[$k] -and -not $ctrls[$k]) { $ctrls[$k] = $found[$k] } }
+}
+
+Write-Host "찾은 결과:" -ForegroundColor Gray
 foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFrom","DateTo","Search","CountLabel","SelectAll","Excel")) {
     if ($ctrls[$k]) {
         Write-Host ("  OK   {0,-12} ({1},{2}) {3}" -f $k, $ctrls[$k].L, $ctrls[$k].T, $ctrls[$k].Class.Split('.')[1]) -ForegroundColor Green
