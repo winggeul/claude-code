@@ -28,11 +28,11 @@ param(
 
 # ─────────── 설정 (한 번만 고치면 된다) ───────────
 
-# 내려받은 CSV 가 잠시 머무는 곳. 집계가 끝나면 지워진다.
-$RawRoot = "\\웹하드\CRM\raw"
-
 # 작업 폴더. 이 스크립트와 aggregate.mjs, template.html 이 함께 있는 곳.
 $Base = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# 내려받은 CSV 가 잠시 머무는 곳. 집계가 끝나면 지워지므로 이 PC 안이면 된다.
+$RawRoot = Join-Path $Base "raw"
 
 # 누적 집계본. 원본을 지워도 지금까지 센 결과는 여기 남는다. 건수뿐이라 개인정보가 없다.
 $Store = Join-Path $Base "store.json"
@@ -71,7 +71,7 @@ Say "=== 시작 ===" "Cyan"
 foreach ($f in @($Template, $Agg)) {
     if (-not (Test-Path $f)) { Fail "파일이 없습니다: $f" }
 }
-if (-not (Test-Path $RawRoot)) { Fail "원본 폴더에 접근할 수 없습니다: $RawRoot" }
+New-Item -ItemType Directory -Path $RawRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $SiteDir -Force | Out-Null
 
 # ─── 1. 수집 ───────────────────────────────────────
