@@ -8,8 +8,8 @@
 설치할 것 없이 PowerShell 만으로 동작한다.
 
 사용법:
-    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1
-    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -Start 2020-01-01 -End 2020-12-31
+    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot D:\CRM원본
+    powershell -ExecutionPolicy Bypass -File crm4_collect.ps1 -RawRoot D:\CRM원본 -Start 2026-08-01 -End 2026-08-20
 #>
 
 param(
@@ -17,9 +17,11 @@ param(
     [datetime]$Start = (Get-Date).Date.AddDays(-1),
     [datetime]$End   = (Get-Date).Date.AddDays(-1),
 
-    # 저장 위치. 반드시 직접 지정한다. 스크립트가 폴더를 만들지는 않는다.
+    # 내려받은 엑셀 원본이 쌓이는 곳. 이름·전화번호가 그대로 들어 있으므로
+    # 반드시 수집 PC 내부 경로여야 한다. 웹하드나 공유 폴더를 지정하면 안 된다.
+    # 웹하드에 올라가는 것은 이 원본을 집계해서 만든 건수 파일뿐이다.
     [Parameter(Mandatory = $true)]
-    [string]$OutputRoot,
+    [string]$RawRoot,
 
     # 등록일 조건 체크박스를 스크립트가 켤지 여부. 이미 켜 둔 상태라면 -SkipDateCheck 로 끈다.
     [switch]$SkipDateCheck,
@@ -219,10 +221,10 @@ $n = Update-ControlMap $win
 Write-Host "컨트롤 $n 개를 찾았습니다." -ForegroundColor Gray
 if ($n -lt 50) { Write-Host "컨트롤이 너무 적습니다. 통합고객목록 창이 맞는지 확인하세요." -ForegroundColor Yellow }
 
-if (-not (Test-Path $OutputRoot)) {
-    Write-Host "저장 폴더가 없습니다: $OutputRoot" -ForegroundColor Red
+if (-not (Test-Path $RawRoot)) {
+    Write-Host "원본 저장 폴더가 없습니다: $RawRoot" -ForegroundColor Red
     Write-Host "폴더를 직접 만드시거나, -OutputRoot 로 쓸 경로를 지정하세요." -ForegroundColor Yellow
-    Write-Host "예: -OutputRoot ""D:\CRM백업""" -ForegroundColor Yellow
+    Write-Host "예: -RawRoot ""D:\CRM원본""" -ForegroundColor Yellow
     exit 1
 }
 
@@ -243,7 +245,7 @@ if ($DryRun) {
 # -Start 를 직접 주지 않았으면 이미 받아둔 마지막 날 다음날부터 어제까지를 메운다.
 # PC 가 며칠 꺼져 있었더라도 다음에 켜질 때 밀린 날짜가 한 번에 따라잡힌다.
 if (-not $PSBoundParameters.ContainsKey('Start')) {
-    $done = Get-ChildItem $OutputRoot -Filter "customers_*.xls" -ErrorAction SilentlyContinue |
+    $done = Get-ChildItem $RawRoot -Filter "customers_*.xls" -ErrorAction SilentlyContinue |
             ForEach-Object { if ($_.BaseName -match '(\d{4}-\d{2}-\d{2})') { [datetime]$Matches[1] } } |
             Sort-Object -Descending | Select-Object -First 1
     if ($done) {
@@ -258,7 +260,7 @@ if ($Start -gt $End) {
 }
 
 Write-Log "수집 시작: $($Start.ToString('yyyy-MM-dd')) ~ $($End.ToString('yyyy-MM-dd'))" "Cyan"
-Write-Log "저장 위치: $OutputRoot" "Cyan"
+Write-Log "원본 저장 위치(수집 PC 내부): $RawRoot" "Cyan"
 
 $script:TargetWindow = $win
 
@@ -287,7 +289,7 @@ $day = $Start.Date
 
 while ($day -le $End.Date) {
     $stamp = $day.ToString("yyyy-MM-dd")
-    $dest = Join-Path $OutputRoot "customers_$stamp.xls"
+    $dest = Join-Path $RawRoot "customers_$stamp.xls"
 
     if (Test-Path $dest) {
         Write-Log "$stamp 이미 있음, 건너뜀"
@@ -351,6 +353,6 @@ while ($day -le $End.Date) {
 }
 
 Write-Log "끝. 성공 $ok / 0건 $empty / 실패 $failed" "Cyan"
-$logPath = Join-Path $OutputRoot ("log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
+$logPath = Join-Path $RawRoot ("log_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
 $script:Log | Out-File $logPath -Encoding utf8
 Write-Host "로그: $logPath"
