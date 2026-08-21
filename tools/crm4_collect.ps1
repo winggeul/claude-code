@@ -17,8 +17,9 @@ param(
     [datetime]$Start = (Get-Date).Date.AddDays(-1),
     [datetime]$End   = (Get-Date).Date.AddDays(-1),
 
-    # 저장 위치. Synology Drive 동기화 폴더에 쓰면 NAS 로 자동 업로드된다.
-    [string]$OutputRoot = "C:\SynologyDrive\CRM4",
+    # 저장 위치. 반드시 직접 지정한다. 스크립트가 폴더를 만들지는 않는다.
+    [Parameter(Mandatory = $true)]
+    [string]$OutputRoot,
 
     # 등록일 조건 체크박스를 스크립트가 켤지 여부. 이미 켜 둔 상태라면 -SkipDateCheck 로 끈다.
     [switch]$SkipDateCheck,
@@ -218,7 +219,12 @@ $n = Update-ControlMap $win
 Write-Host "컨트롤 $n 개를 찾았습니다." -ForegroundColor Gray
 if ($n -lt 50) { Write-Host "컨트롤이 너무 적습니다. 통합고객목록 창이 맞는지 확인하세요." -ForegroundColor Yellow }
 
-if (-not (Test-Path $OutputRoot)) { New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null }
+if (-not (Test-Path $OutputRoot)) {
+    Write-Host "저장 폴더가 없습니다: $OutputRoot" -ForegroundColor Red
+    Write-Host "폴더를 직접 만드시거나, -OutputRoot 로 쓸 경로를 지정하세요." -ForegroundColor Yellow
+    Write-Host "예: -OutputRoot ""D:\CRM백업""" -ForegroundColor Yellow
+    exit 1
+}
 
 if ($DryRun) {
     Write-Host "점검 모드 - 클릭하지 않습니다." -ForegroundColor Cyan
