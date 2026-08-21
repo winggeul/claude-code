@@ -422,6 +422,12 @@ while ($day -le $End.Date) {
     $stamp = $day.ToString("yyyy-MM-dd")
     $dest = Join-Path $RawRoot "customers_$stamp.csv"
 
+    # 일요일은 영업하지 않아 받을 것이 없다. 괜히 CRM4 를 한 번 더 돌리지 않는다.
+    if ($day.DayOfWeek -eq [System.DayOfWeek]::Sunday) {
+        Write-Log "$stamp 일요일, 건너뜀"
+        $day = $day.AddDays(1); continue
+    }
+
     if ((Test-Path $dest) -and -not $Force) {
         Write-Log "$stamp 이미 있음, 건너뜀"
         $day = $day.AddDays(1); continue

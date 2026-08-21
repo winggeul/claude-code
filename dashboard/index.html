@@ -81,6 +81,7 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .chip {
     font-size: 12px; padding: 3px 9px; border-radius: 999px;
+    line-height: 1.6; text-align: left;
     border: 1px solid var(--border); color: var(--text-secondary);
     background: var(--surface-1);
   }
@@ -231,6 +232,10 @@ const KEEP_WITH_CODE = [/^기타\(/];
 // 이름은 줄이지 않되 코드는 떼는 것들.
 const KEEP_FULL_NAME = [/^자사채널-영상/];
 
+// 채널 뒤에 붙은 갈래 중 떼지 않는 것들. 같은 채널이라도 성격이 달라서다.
+// '네이버-인끝카페' 는 인끝채널이 아니므로 걸리지 않는다.
+const KEEP_SUFFIX = [[/^PPL/i, "PPL"], [/^인끝채널/, "인끝채널"]];
+
 // 손으로 적다 어긋난 값들. 코드가 같거나 이름이 한두 글자 다른 것만 되돌린다.
 // 판단이 갈리는 값은 여기 넣지 않고 그대로 두어 눈에 띄게 한다.
 const TYPO = new Map([
@@ -240,11 +245,16 @@ const TYPO = new Map([
   ["[기타]", "기타(4016)"],              // 코드가 빠진 채 들어간 건
 ]);
 
+// 코드가 붙은 값과 안 붙은 값이 섞여 있을 뿐 같은 곳에서 온 채널. 코드별로 나누지 않는다.
+const NO_DETAIL = [/^소개$/];
+
 // 세부 항목의 열쇠. 'SOOP-PPL(1919)봉준★♨' 와 'SOOP-PPL(1919)봉준' 은 같은 코드이므로 한 줄이다.
 // 코드가 없는 값은 나눌 근거가 없으므로 채널 이름으로 합친다.
 function detailKeyOf(ch) {
+  const g = groupOf(ch);
+  if (NO_DETAIL.some(re => re.test(g))) return g;
   const m = ch.match(/^(.*?\(\d{3,5}\))/);
-  return m ? m[1] : groupOf(ch);
+  return m ? m[1] : g;
 }
 
 function groupOf(ch) {
@@ -260,8 +270,8 @@ function groupOf(ch) {
   const base = dash > 0 ? head.slice(0, dash).trim() : head;
   const tail = dash > 0 ? head.slice(dash + 1).trim() : "";
 
-  // PPL 은 같은 채널이라도 광고 성격이 달라 묶지 않고 'OO-PPL' 로 따로 세운다.
-  if (/^PPL/i.test(tail)) return base + "-PPL";
+  // 같은 채널이라도 성격이 달라 묶지 않는 갈래. 'OO-PPL' 처럼 뒤를 붙인 채로 세운다.
+  for (const [re, name] of KEEP_SUFFIX) if (re.test(tail)) return base + "-" + name;
   if (/^PPL/i.test(base)) return "유튜브-PPL";   // 'PPL(5504) 봉지욱…' 처럼 앞이 빠진 값
 
   const fixed = TYPO.get(base) || base;
@@ -828,10 +838,7 @@ function render() {
     `${days[0]} ~ ${days[days.length - 1]} · ${days.length}일 · 누계 ${fmt(grand)}건` +
     ` · 마지막 갱신 ${(DATA.generated || "").replace("T", " ").slice(0, 16)}`;
   const ex = DATA.excluded || [];
-  el("chip-excl").textContent = !ex.length ? "제외 항목 없음"
-    : ex.length <= 3 ? `${ex.join(", ")} 제외`
-    : `${ex.slice(0, 2).join(", ")} 외 ${ex.length - 2}개 제외`;
-  el("chip-excl").title = ex.length ? ex.join(", ") : "";
+  el("chip-excl").textContent = ex.length ? `제외: ${ex.join(" · ")}` : "제외 항목 없음";
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
   const restDays = days.filter(isRest).length;

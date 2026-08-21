@@ -294,7 +294,7 @@ if (!all.length) { console.error("집계된 데이터가 없습니다."); proces
 
 const { added, updated } = mergeStore(store, all);
 store.generated = new Date().toISOString().slice(0, 19);
-store.excluded = EXCLUDE;
+store.excluded = [...EXCLUDE, "유입경로 미기재"];
 
 const days = [...new Set(store.rows.map(r => r.date))].sort();
 console.log(`\n신규 ${added} · 갱신 ${updated}`);

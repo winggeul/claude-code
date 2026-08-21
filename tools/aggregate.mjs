@@ -159,7 +159,7 @@ function loadStore(file) {
     const j = JSON.parse(fs.readFileSync(file, "utf8"));
     if (Array.isArray(j.rows)) return j;
   } catch {}
-  return { generated: null, excluded: EXCLUDE, rows: [] };
+  return { generated: null, excluded: [], rows: [] };
 }
 
 function mergeStore(store, counts) {
@@ -215,7 +215,7 @@ if (!store.rows.length) {
 }
 
 store.generated = new Date().toISOString().slice(0, 19);
-store.excluded = EXCLUDE;
+store.excluded = [...EXCLUDE, "유입경로 미기재"];
 
 // HTML 은 템플릿의 표시 구간만 갈아끼워 만든다.
 const tpl = fs.readFileSync(args.template, "utf8");
