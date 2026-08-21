@@ -4,7 +4,9 @@
 
 ## 1. 폴더 만들기
 
-`D:\CRM자동화` 를 만들고 이 파일들을 넣습니다.
+`C:\CRM자동화` 를 만들고 이 파일들을 넣습니다.
+C 드라이브 최상위에 폴더를 만들 때 권한을 물으면 계속 진행을 누르면 됩니다.
+막히면 `C:\Users\사용자이름\CRM자동화` 도 괜찮습니다. 스크립트는 자기가 놓인 폴더를 기준으로 동작합니다.
 
 ```
 crm4_collect.ps1    CRM4에서 CSV 내려받기
@@ -30,7 +32,7 @@ node -v
 CRM4를 켜고 `고객관리 > 통합고객목록` 창을 띄운 다음:
 
 ```powershell
-cd D:\CRM자동화
+cd C:\CRM자동화
 powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1 -SkipDeploy
 ```
 
@@ -79,8 +81,8 @@ powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1
 
 ```powershell
 $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
-           -Argument "-ExecutionPolicy Bypass -File D:\CRM자동화\crm4_daily.ps1" `
-           -WorkingDirectory "D:\CRM자동화"
+           -Argument "-ExecutionPolicy Bypass -File C:\CRM자동화\crm4_daily.ps1" `
+           -WorkingDirectory "C:\CRM자동화"
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 
@@ -96,11 +98,11 @@ CRM4가 먼저 떠 있어야 하므로, CRM4를 **시작 프로그램에 등록*
 
 | 증상 | 확인할 것 |
 |---|---|
-| 아무 일도 안 일어남 | `D:\CRM자동화` 의 `log_*.txt` |
+| 아무 일도 안 일어남 | `C:\CRM자동화` 의 `log_*.txt` |
 | 창을 못 찾는다고 나옴 | CRM4 `통합고객목록` 창이 떠 있는지 |
 | 클릭 안 하고 멈춤 | 다른 창이 앞에 있었던 것. 정상 동작이며 다시 실행하면 된다 |
 | 숫자가 안 맞음 | `-KeepRaw` 로 실행해 원본 CSV 를 남긴 뒤 대조 |
 
-원본 CSV 는 `D:\CRM자동화\raw` 에 잠깐 머물다가 집계가 끝나면 지워집니다.
+원본 CSV 는 `C:\CRM자동화\raw` 에 잠깐 머물다가 집계가 끝나면 지워집니다.
 집계가 실패하면 지우지 않으므로 다음 실행에서 다시 시도됩니다.
 이 PC 밖으로 나가는 것은 건수 집계뿐입니다.
