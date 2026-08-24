@@ -370,6 +370,10 @@ if (-not (Test-Path $RawRoot)) {
     exit 1
 }
 
+# 저장 대화상자는 상대 경로를 자기가 마지막에 쓰던 폴더 기준으로 푼다. 우리 작업 폴더가 아니다.
+# '.\test' 를 그대로 넘기면 엉뚱한 데 저장되고, 우리는 여기서 찾다가 없다고 한다.
+$RawRoot = (Resolve-Path -LiteralPath $RawRoot).ProviderPath
+
 # 탭을 한 번도 열지 않으면 그 페이지의 컨트롤은 아직 만들어지지 않는다.
 # 점검할 때는 탭을 차례로 넘겨보며 모은다. 탭 전환은 메시지로 하므로 마우스는 움직이지 않는다.
 $ctrls = Resolve-Controls $win
