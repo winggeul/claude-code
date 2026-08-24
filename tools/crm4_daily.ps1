@@ -28,7 +28,10 @@ param(
     [switch]$SkipDeploy,
 
     # 집계 후에도 원본 CSV 를 남긴다. 숫자를 대조해야 할 때만 쓴다.
-    [switch]$KeepRaw
+    [switch]$KeepRaw,
+
+    # 이미 받아 둔 날이어도 그냥 진행한다.
+    [switch]$Force
 )
 
 # ─────────── 설정 (한 번만 고치면 된다) ───────────
@@ -87,10 +90,42 @@ foreach ($f in @($Template, $Agg)) {
 New-Item -ItemType Directory -Path $RawRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $SiteDir -Force | Out-Null
 
+# ─── 0. 오늘 할 일이 있는지 ────────────────────────
+#
+# 하루에 여러 번 돌아도 되도록, 이미 받아 둔 날이면 CRM4 를 건드리지 않고 바로 끝낸다.
+# 6시에 실패해도 8시·10시 재시도가 같은 날 안에서 다시 받아 준다.
+# 어제치를 오늘 받는 것은 몇 시에 받든 기준이 같다.
+
+$target = $End.Date
+$lastDay = ""
+if (Test-Path $Store) {
+    $js = 'const fs=require("fs");try{const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=s.rows.map(r=>r.date).sort();console.log(d[d.length-1]||"")}catch{console.log("")}'
+    $lastDay = (& node -e $js $Store | Select-Object -First 1)
+}
+
+$nothingToCollect = $false
+if (-not $Force -and -not $SkipCollect) {
+    if ($target.DayOfWeek -eq [System.DayOfWeek]::Sunday) {
+        Say "$($target.ToString('yyyy-MM-dd')) 은 일요일입니다. 받을 것이 없습니다." "Gray"
+        $nothingToCollect = $true
+    } elseif ($lastDay -and ([datetime]$lastDay -ge $target)) {
+        Say "$($target.ToString('yyyy-MM-dd')) 은 이미 받아 두었습니다." "Gray"
+        $nothingToCollect = $true
+    }
+}
+
+# 받을 것도 없고 화면도 최신이면 아무것도 하지 않는다.
+if ($nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
+    ((Get-Item $OutFile).LastWriteTime -ge (Get-Item $Store).LastWriteTime)) {
+    Say "할 일이 없습니다." "Green"
+    $log | Out-File $LogFile -Encoding utf8 -Append
+    exit 0
+}
+
 # ─── 1. 수집 ───────────────────────────────────────
 
-if ($SkipCollect) {
-    Say "수집 건너뜀"
+if ($SkipCollect -or $nothingToCollect) {
+    if ($SkipCollect) { Say "수집 건너뜀" }
 } else {
     if (-not (Test-Path $Collect)) { Fail "파일이 없습니다: $Collect" }
 

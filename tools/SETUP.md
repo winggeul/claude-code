@@ -114,15 +114,34 @@ powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1
 $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
            -Argument "-ExecutionPolicy Bypass -File C:\CRM자동화\crm4_daily.ps1" `
            -WorkingDirectory "C:\CRM자동화"
+
+# 새벽 6시에 시작하고, 실패했을 때를 대비해 2시간마다 저녁 6시까지 다시 시도한다.
+# 이미 받아 둔 날이면 CRM4 를 건드리지 않고 곧바로 끝나므로 여러 번 돌아도 방해되지 않는다.
 $trigger = New-ScheduledTaskTrigger -Daily -At 6am
-$set     = New-ScheduledTaskSettingsSet -StartWhenAvailable `
-           -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew
+$trigger.Repetition = (New-ScheduledTaskTrigger -Once -At 6am `
+                       -RepetitionInterval (New-TimeSpan -Hours 2) `
+                       -RepetitionDuration (New-TimeSpan -Hours 12)).Repetition
+
+$set = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+       -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew `
+       -RestartCount 2 -RestartInterval (New-TimeSpan -Minutes 15)
 
 Register-ScheduledTask -TaskName "CRM4 일일수집" -Action $action -Trigger $trigger `
                        -Settings $set -RunLevel Highest -Force
 ```
 
 매일 새벽 6시에 **어제치 하루만** 받습니다. 일요일은 영업을 하지 않으므로 건너뜁니다.
+
+**실패했을 때의 보험이 세 겹입니다.**
+
+| | |
+|---|---|
+| 하루 안 재시도 | 6시에 실패해도 8·10·12·14·16·18시에 다시 시도합니다. 어제치를 오늘 받는 것은 몇 시에 받든 기준이 같습니다 |
+| 즉시 재시작 | 스크립트가 비정상 종료하면 15분 뒤 최대 2번 다시 실행합니다 |
+| 놓친 실행 | 그 시각에 PC가 자고 있었으면 깨어난 뒤 바로 실행합니다 (`-StartWhenAvailable`) |
+
+이미 받아 둔 날이면 CRM4 를 건드리지 않고 몇 초 만에 끝나므로,
+업무 시간에 재시도가 돌아도 화면을 빼앗기지 않습니다.
 
 PC 를 계속 켜 두시므로 시각 지정이 맞습니다. 로그온 방식은 재부팅을 해야 돌기 때문에 쓰지 않습니다.
 시각을 바꾸려면 `-At 6am` 만 고치면 됩니다. 자정만 넘기면 언제든 어제치가 온전히 나옵니다.
