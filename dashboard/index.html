@@ -72,6 +72,8 @@
   tbody tr.hol td:first-child { color: var(--critical); font-weight: 600; }
   tbody tr.hol td { background: color-mix(in srgb, var(--critical) 6%, transparent); }
   td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
+  td.per, th.per { border-right: 1px solid var(--axis); color: var(--text-secondary); }
+  thead th.per { color: var(--muted); }
 
   body {
     background: var(--plane);
@@ -234,12 +236,13 @@
       <span class="chip" id="chip-src">샘플 데이터</span>
       <span class="chip warn" id="chip-gap" hidden></span>
       <span class="chip warn" id="chip-hol" hidden></span>
+      <span class="chip warn" id="chip-head" hidden></span>
     </div>
   </div>
 
   <section class="card">
     <h2>채널별 인입 수량</h2>
-    <p class="note">맨 왼쪽이 그 기간의 합계이고, 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 펼친 기간에 건이 없는 채널은 열에서 빠집니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
+    <p class="note">맨 왼쪽이 그 기간의 합계이고, <strong>인당</strong>은 영업일 기준 1인당 하루 평균입니다. 그 오른쪽부터 채널별 건수입니다. 코드가 여러 개인 채널은 <strong>이름을 눌러 코드별로 펼칠 수 있습니다.</strong> 펼친 기간에 건이 없는 채널은 열에서 빠집니다. 표가 넓으면 좌우로 밀어서 보세요.</p>
     <div class="chips" id="open-chips"></div>
     <div class="tablewrap" id="tablewrap"></div>
   </section>
@@ -427,6 +430,21 @@ const HOLIDAYS = new Set([
 ]);
 const HOLIDAY_YEARS = new Set([...HOLIDAYS].map(d => d.slice(0, 4)));
 
+// 달마다 상담 인원이 다르다. 새 달이 시작되면 여기에 한 줄 추가한다.
+// 등록되지 않은 달은 가장 최근에 적어 둔 인원으로 계산하고, 화면 위에 알린다.
+const HEADCOUNT = {
+  "2026-07": 15,
+  "2026-08": 16,
+};
+const HEAD_MONTHS = Object.keys(HEADCOUNT).sort();
+function headOf(iso) {
+  const m = iso.slice(0, 7);
+  if (HEADCOUNT[m]) return HEADCOUNT[m];
+  const near = HEAD_MONTHS.filter(k => k <= m).pop() || HEAD_MONTHS[HEAD_MONTHS.length - 1];
+  return HEADCOUNT[near] || 1;
+}
+
+const DOW = ["일", "월", "화", "수", "목", "금", "토"];
 const dowOf = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
 const isSaturday = (iso) => dowOf(iso) === 6;
 const isRest = (iso) => dowOf(iso) === 0 || dowOf(iso) === 6 || HOLIDAYS.has(iso);
@@ -467,8 +485,7 @@ function bucketKey(iso, grain) {
 function bucketLabel(key, grain) {
   if (grain === "month") return `${+key.slice(5, 7)}월`;
   if (grain === "week") return weekLabelOf(key);
-  const d = new Date(key + "T00:00:00");
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return `${+key.slice(5, 7)}/${+key.slice(8, 10)} (${DOW[dowOf(key)]})`;
 }
 
 function aggregate() {
@@ -480,8 +497,9 @@ function aggregate() {
   for (const r of DATA.rows) {
     const g = groupOf(r.channel);
     const k = bucketKey(r.date, GRAIN);
-    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0 });
+    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, dates: new Set() });
     const b = map.get(k);
+    b.dates.add(r.date);
     b.parts[top.includes(g) ? g : FOLD] += r.count;
     b.all[g] = (b.all[g] || 0) + r.count;
     const dk = detailKeyOf(r.channel);
@@ -497,7 +515,7 @@ function aggregate() {
     const had = [...map.keys()].sort();
     for (let d = had[0]; d < had[had.length - 1]; d = shiftDays(d, 1)) {
       if (dowOf(d) === 0 || map.has(d)) continue;
-      map.set(d, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, gap: true });
+      map.set(d, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, dates: new Set(), gap: true });
     }
   }
 
@@ -507,6 +525,8 @@ function aggregate() {
     return {
       key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all, sub: b.sub, work: b.work || 0,
       gap: !!b.gap,
+      // 인당 일평균의 분모. 토·일·공휴일은 빼고, 날마다 그 달 인원을 더한다.
+      pdays: [...b.dates].filter(d => !isRest(d)).reduce((s, d) => s + headOf(d), 0),
       rest: GRAIN === "day" && isRest(k),
       tone: GRAIN === "day" ? toneOf(k) : "",
       why: GRAIN === "day" ? restWhy(k) : "",
@@ -805,6 +825,11 @@ function drawKpis(agg) {
   const workSum = workDays.reduce((s, d) => s + byDay.get(d), 0);
   const avg = workDays.length ? Math.round(workSum / workDays.length) : 0;
 
+  // 인당 일평균. 인원이 달마다 다르므로 날마다 그 달 인원을 더해 나눈다.
+  const pdays = workDays.reduce((s, d) => s + headOf(d), 0);
+  const perHead = pdays ? (workSum / pdays).toFixed(1) : "–";
+  const head = HEADCOUNT[lastDay.slice(0, 7)];
+
   const grand = agg.totals.reduce((s, t) => s + t.value, 0);
   const topCh = agg.totals.find(t => t.name !== FOLD) || agg.totals[0];
   const share = grand ? Math.round((topCh.value / grand) * 100) : 0;
@@ -837,6 +862,11 @@ function drawKpis(agg) {
       <div class="label">${mm}월 영업일 평균</div>
       <div class="value">${fmt(avg)}<span class="unit">건</span></div>
       <div class="delta">영업일 ${workDays.length}일 · 토·일·공휴일 제외</div>
+    </div>
+    <div class="kpi">
+      <div class="label">${mm}월 인당 일평균</div>
+      <div class="value">${perHead}<span class="unit">건</span></div>
+      <div class="delta">${head ? `${head}명` : "인원 미등록"} · 영업일 ${workDays.length}일 기준</div>
     </div>
     <div class="kpi">
       <div class="label">최다 유입경로</div>
@@ -933,8 +963,17 @@ function drawTable(agg) {
   // 합계는 묶음 기준으로만 센다. 펼친 열까지 더하면 두 번 세어진다.
   const rowTotal = (b) => agg.allNames.reduce((s, n) => s + (b.all[n] || 0), 0);
   const grandTotal = shown.reduce((s, b) => s + rowTotal(b), 0);
+  // 인당 일평균 = 건수 / (영업일수 x 인원). 일·주·월 어느 단위에서도 같은 뜻이 된다.
+  // 분자도 분모도 영업일 기준이다. 토·일·공휴일만 있는 줄은 낼 값이 없어 - 로 둔다.
+  const perHead = (total, pdays) => pdays > 0 ? (total / pdays).toFixed(1) : null;
+  const perCell = (total, pdays) => {
+    const v = perHead(total, pdays);
+    return v === null
+      ? '<td class="per"><span class="zero">–</span></td>'
+      : `<td class="per">${v}</td>`;
+  };
 
-  const head = `<tr><th>${grain}</th><th class="sum">합계</th>` + cols.map(c => {
+  const head = `<tr><th>${grain}</th><th class="sum">합계</th><th class="per">인당</th>` + cols.map(c => {
     if (c.isSub) return `<th class="sub">${c.label}</th>`;
     if (!c.openable) return `<th>${c.label}</th>`;
     return `<th class="open" role="button" tabindex="0" aria-expanded="${c.open}"` +
@@ -944,9 +983,10 @@ function drawTable(agg) {
 
   const rowHtml = (b) => b.gap
     ? `<tr class="gap"><td>${b.label}</td><td class="sum">미수집</td>` +
+      `<td class="per"><span class="zero">–</span></td>` +
       `<td colspan="${cols.length}">그날 받지 못했습니다. 지금 다시 뽑으면 기준이 달라져 채우지 않습니다.</td></tr>`
     : `<tr${b.tone ? ` class="${b.tone}"` : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
-    `<td class="sum">${fmt(rowTotal(b))}</td>` +
+    `<td class="sum">${fmt(rowTotal(b))}</td>` + perCell(b.work, b.pdays) +
     cols.map(c => {
       const v = cell(b, c);
       return `<td${c.isSub ? ' class="sub"' : ""}>${v ? fmt(v) : '<span class="zero">–</span>'}</td>`;
@@ -969,6 +1009,7 @@ function drawTable(agg) {
 
   const foot = `<tr><td>합계</td>` +
     `<td class="sum">${fmt(grandTotal)}</td>` +
+    perCell(shown.reduce((s, b) => s + b.work, 0), shown.reduce((s, b) => s + b.pdays, 0)) +
     cols.map(c => {
       const v = shown.reduce((s, b) => s + cell(b, c), 0);
       return `<td${c.isSub ? ' class="sub"' : ""}>${fmt(v)}</td>`;
@@ -1041,6 +1082,11 @@ function render() {
 
   // 공휴일 표에 없는 해가 들어오면 그 해는 공휴일이 평일로 잡힌다.
   // 평균이 낮아지고 전영업일 비교가 어긋나므로, 조용히 넘어가지 않고 알린다.
+  const openHead = [...new Set(days.map(d => d.slice(0, 7)))].filter(m => !HEADCOUNT[m]);
+  el("chip-head").textContent = openHead.length
+    ? `${openHead.join(", ")} 인원이 등록되지 않았습니다 — 직전 달 인원으로 계산했습니다` : "";
+  el("chip-head").hidden = !openHead.length;
+
   const openYears = [...new Set(days.map(d => d.slice(0, 4)))].filter(y => !HOLIDAY_YEARS.has(y));
   el("chip-hol").textContent = openYears.length
     ? `${openYears.join("·")}년 공휴일이 등록되지 않았습니다 — 평균과 증감이 어긋납니다` : "";
