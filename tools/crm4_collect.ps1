@@ -257,6 +257,29 @@ function Click-Ctrl($ctrl, [int]$offsetX = 0) {
     Start-Sleep -Milliseconds 400
 }
 
+# 한글 입력기가 켜져 있으면 타이핑한 영문이 그대로 한글로 바뀐다.
+#   test\customers_2026-08-22.csv  ->  ㅅㄷㄴㅅ\쳔새ㅡㄷㄱㄴ_2026-08-22.ㅊㄴㅍ
+# 폴더 이름까지 바뀌어 엉뚱한 곳에 저장되므로, 글자는 치지 않고 클립보드로 넣는다.
+# 붙여넣기는 입력기를 거치지 않아 어떤 상태에서도 같은 결과가 나온다.
+function Send-Text([string]$text, [IntPtr]$expect) {
+    $prev = $null
+    try { $prev = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch {}
+    try {
+        Set-Clipboard -Value $text
+        Start-Sleep -Milliseconds 150
+        Send-Keys "^a" $expect          # 미리 채워진 이름을 지운다
+        Start-Sleep -Milliseconds 120
+        Send-Keys "^v" $expect
+        Start-Sleep -Milliseconds 250
+    } catch {
+        # 클립보드를 못 쓰면 예전처럼 친다. 입력기가 영문이면 그래도 된다.
+        Write-Log "  클립보드를 쓰지 못해 직접 입력합니다: $($_.Exception.Message)" "Yellow"
+        Send-Keys ($text.Replace("+","{+}").Replace("^","{^}").Replace("%","{%}").Replace("~","{~}")) $expect
+    } finally {
+        if ($null -ne $prev) { try { Set-Clipboard -Value $prev } catch {} }
+    }
+}
+
 function Send-Keys([string]$keys, [IntPtr]$expect) {
     if (-not (Confirm-Foreground)) {
         throw "CRM4 창이 맨 앞이 아닙니다. 엉뚱한 곳에 입력될 위험이 있어 중단합니다."
@@ -491,7 +514,7 @@ while ($day -le $End.Date) {
 
             [void][C4]::SetForegroundWindow($dlg)
             Start-Sleep -Milliseconds 500
-            Send-Keys $dest.Replace("+","{+}").Replace("^","{^}") $dlg
+            Send-Text $dest $dlg
             Start-Sleep -Milliseconds 300
             Send-Keys "{ENTER}" $dlg
             Start-Sleep -Seconds ($Wait * 2)
