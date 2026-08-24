@@ -82,7 +82,9 @@ function Invoke-Native([string]$exe, [string[]]$argv) {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        $out = & $exe @argv 2>&1 | ForEach-Object { "$_" }
+        $out = & $exe @argv 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { "$_" }
+        } | Where-Object { $_ -ne $null -and "$_".Trim() -ne "" }
         return [pscustomobject]@{ Out = $out; Code = $LASTEXITCODE }
     } finally { $ErrorActionPreference = $prev }
 }
@@ -195,10 +197,18 @@ if ($SkipDeploy) {
     $dep.Out | ForEach-Object { Say "  $_" }
     if ($dep.Code -ne 0) { Fail "배포 실패. 집계 결과는 $OutFile 에 있습니다." }
 
-    # 올라간 주소를 로그 맨 끝에 한 줄로 남긴다. 나중에 찾기 쉽게.
-    $url = $dep.Out | Where-Object { $_ -match "https://[^\s]+\.vercel\.app" } | Select-Object -Last 1
-    if ($url -and $url -match "(https://[^\s]+\.vercel\.app)") { Say "배포 완료 - $($Matches[1])" "Green" }
-    else { Say "배포 완료" "Green" }
+    # 주소를 로그 끝에 남긴다. 배포마다 달라지는 Production 주소가 아니라
+    # 늘 같은 Aliased 주소를 쓴다. 사람에게 알려줄 주소는 그쪽이다.
+    $url = $null
+    foreach ($line in $dep.Out) {
+        if ($line -match "Aliased\s+(https://[^\s]+)") { $url = $Matches[1]; break }
+    }
+    if (-not $url) {
+        foreach ($line in $dep.Out) {
+            if ($line -match "Production\s+(https://[^\s]+)") { $url = $Matches[1] }
+        }
+    }
+    if ($url) { Say "배포 완료 - $url" "Green" } else { Say "배포 완료" "Green" }
 }
 
 Say "=== 끝 ===" "Cyan"
