@@ -100,6 +100,22 @@
   #open-chips:empty { display: none; }
   .chip.warn { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
 
+  .banner {
+    background: color-mix(in srgb, var(--critical) 10%, var(--surface-1));
+    border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent);
+    border-left: 4px solid var(--critical);
+    border-radius: 8px; padding: 12px 16px; margin: 16px 0 4px;
+    font-size: 14px; line-height: 1.6; color: var(--text-primary);
+    display: flex; flex-wrap: wrap; gap: 4px 8px;
+  }
+  .banner strong { color: var(--critical); }
+  .banner code {
+    font-family: var(--font-num); font-size: 12.5px;
+    background: color-mix(in srgb, var(--critical) 12%, transparent);
+    padding: 1px 6px; border-radius: 4px;
+  }
+  .banner[hidden] { display: none; }
+
   .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 22px; }
   .kpi {
     background: var(--surface-1); border: 1px solid var(--border);
@@ -205,6 +221,12 @@
 </div>
 
 <div class="wrap">
+  <div class="banner" id="banner" hidden>
+    <strong>이 화면은 샘플입니다.</strong>
+    <span>화면 틀인 <code>template.html</code> 을 그대로 여신 것 같습니다.
+      숫자는 아무 뜻이 없습니다. 실제 집계는 <code>site\index.html</code> 에 있습니다.</span>
+  </div>
+
   <div class="meta">
     <p class="sub" id="sub">불러오는 중…</p>
     <div class="chips">
@@ -1026,6 +1048,8 @@ function render() {
 
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
+  // 칩 하나로는 놓친다. 틀을 그냥 열었을 때는 화면 맨 위에서 못 지나치게 한다.
+  el("banner").hidden = !IS_SAMPLE;
   const restDays = days.filter(isRest).length;
   el("note-trend").textContent = restDays
     ? `영업일만 표시합니다. 토·일·공휴일 ${restDays}일은 뺐습니다.`
