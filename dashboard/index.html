@@ -211,6 +211,7 @@
       <span class="chip warn" id="chip-excl">협력점해피콜 제외</span>
       <span class="chip" id="chip-src">샘플 데이터</span>
       <span class="chip warn" id="chip-gap" hidden></span>
+      <span class="chip warn" id="chip-hol" hidden></span>
     </div>
   </div>
 
@@ -386,7 +387,10 @@ function channelOrder(rows) {
 }
 
 // 공휴일. 인입이 평일의 1/3 수준이라 평균과 증감 비교에서 빼야 한다.
-// 2026-07-17 · 08-15 · 08-17 은 받은 데이터에서 확인됐다. 나머지는 해마다 확인이 필요하다.
+//
+// 이 화면에서 손으로 채워야 하는 것은 여기뿐이다. 날짜·주차·월 이름, 채널 순서,
+// 상위 몇 개까지 색을 줄지, 빠진 날 표시까지 나머지는 전부 데이터에서 다시 계산한다.
+// 해가 바뀌면 그 해 공휴일을 여기에 추가해야 한다. 빠뜨리면 아래 경고가 뜬다.
 const HOLIDAYS = new Set([
   "2026-01-01",
   "2026-02-16", "2026-02-17", "2026-02-18",              // 설날
@@ -399,6 +403,7 @@ const HOLIDAYS = new Set([
   "2026-10-03", "2026-10-05", "2026-10-09",              // 개천절 · 대체 · 한글날
   "2026-12-25",
 ]);
+const HOLIDAY_YEARS = new Set([...HOLIDAYS].map(d => d.slice(0, 4)));
 
 const dowOf = (iso) => new Date(iso + "T00:00:00Z").getUTCDay();
 const isSaturday = (iso) => dowOf(iso) === 6;
@@ -1011,6 +1016,13 @@ function render() {
     if (dowOf(d) !== 0 && !present.has(d)) gaps++;
   el("chip-gap").textContent = gaps ? `미수집 ${gaps}일` : "";
   el("chip-gap").hidden = !gaps;
+
+  // 공휴일 표에 없는 해가 들어오면 그 해는 공휴일이 평일로 잡힌다.
+  // 평균이 낮아지고 전영업일 비교가 어긋나므로, 조용히 넘어가지 않고 알린다.
+  const openYears = [...new Set(days.map(d => d.slice(0, 4)))].filter(y => !HOLIDAY_YEARS.has(y));
+  el("chip-hol").textContent = openYears.length
+    ? `${openYears.join("·")}년 공휴일이 등록되지 않았습니다 — 평균과 증감이 어긋납니다` : "";
+  el("chip-hol").hidden = !openYears.length;
 
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
