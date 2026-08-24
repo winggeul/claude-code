@@ -170,8 +170,14 @@ if ($SkipDeploy) {
 } elseif (-not $VercelToken) {
     Say "VERCEL_TOKEN 이 없어 배포를 건너뜁니다. 결과: $OutFile" "Yellow"
 } else {
+    # PowerShell 은 'npx' 를 npx.ps1 로 잡는다. 실행 정책이 막으면 배포가 통째로 실패하므로
+    # 정책과 상관없는 npx.cmd 를 먼저 찾는다.
+    $npx = Get-Command npx.cmd -ErrorAction SilentlyContinue
+    if (-not $npx) { $npx = Get-Command npx -ErrorAction SilentlyContinue }
+    if (-not $npx) { Fail "npx 를 찾지 못했습니다. Node.js 설치를 확인하세요. 결과는 $OutFile 에 있습니다." }
+
     Say "배포 시작" "Cyan"
-    $depOut = & npx --yes vercel deploy $SiteDir --prod --yes --token $VercelToken 2>&1
+    $depOut = & $npx.Source --yes vercel deploy $SiteDir --prod --yes --token $VercelToken 2>&1
     $depOut | ForEach-Object { Say "  $_" }
     if ($LASTEXITCODE -ne 0) { Fail "배포 실패. 집계 결과는 $OutFile 에 있습니다." }
     Say "배포 완료" "Green"

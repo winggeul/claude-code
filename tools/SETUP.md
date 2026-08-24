@@ -87,9 +87,16 @@ node .\backfill_xlsx.mjs --xlsx .\받은파일.xlsx --store .\store.json
 <https://vercel.com> 가입 후 한 번만 수동으로 올립니다.
 
 ```powershell
-npx vercel login
-npx vercel deploy .\site --prod
+npx.cmd vercel login
 ```
+
+```powershell
+npx.cmd vercel deploy .\site --prod
+```
+
+`npx` 가 아니라 **`npx.cmd`** 입니다. 그냥 `npx` 라고 치면 PowerShell 이 `npx.ps1` 을 찾다가
+실행 정책에 막혀 *이 시스템에서 스크립트를 실행할 수 없으므로* 오류가 납니다.
+`.cmd` 를 붙이면 그 검사를 지나가므로 정책을 바꿀 필요가 없습니다.
 
 프로젝트 이름을 물으면 아무거나 정하면 됩니다. 배포가 끝나면 주소가 나옵니다.
 그 주소는 앞으로 바뀌지 않습니다.
