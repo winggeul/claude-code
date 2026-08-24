@@ -416,6 +416,14 @@ const restWhy = (iso) => {
 const shiftDays = (iso, n) =>
   new Date(new Date(iso + "T00:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
 const weekStart = (iso) => shiftDays(iso, -((dowOf(iso) + 6) % 7));   // 월요일 시작
+
+// 목요일이 든 달의 몇 번째 주인지. 달 경계에 걸친 주가 한쪽에만 속한다.
+function weekLabelOf(startIso) {
+  const th = shiftDays(startIso, 3);
+  const y = +th.slice(0, 4), mo = +th.slice(5, 7), day = +th.slice(8, 10);
+  const firstThu = 1 + ((4 - new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 7) % 7);
+  return `${mo}월 ${Math.floor((day - firstThu) / 7) + 1}주차`;
+}
 const md = (iso) => `${+iso.slice(5, 7)}/${+iso.slice(8, 10)}`;
 
 function bucketKey(iso, grain) {
@@ -431,13 +439,7 @@ function bucketKey(iso, grain) {
 
 function bucketLabel(key, grain) {
   if (grain === "month") return `${+key.slice(5, 7)}월`;
-  if (grain === "week") {
-    // 목요일이 든 달의 몇 번째 주인지로 센다. 달 경계에 걸친 주가 한쪽에만 속한다.
-    const th = shiftDays(key, 3);
-    const y = +th.slice(0, 4), mo = +th.slice(5, 7), day = +th.slice(8, 10);
-    const firstThu = 1 + ((4 - new Date(Date.UTC(y, mo - 1, 1)).getUTCDay() + 7) % 7);
-    return `${mo}월 ${Math.floor((day - firstThu) / 7) + 1}주차`;
-  }
+  if (grain === "week") return weekLabelOf(key);
   const d = new Date(key + "T00:00:00");
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
@@ -795,12 +797,12 @@ function drawKpis(agg) {
       ${delta(lastVal, baseDay ? byDay.get(baseDay) : null, baseDay ? `${baseName}(${md(baseDay)})` : "기준일")}
     </div>
     <div class="kpi">
-      <div class="label">이번 주 (${md(wFrom)}~${md(lastDay)})</div>
+      <div class="label">${weekLabelOf(wFrom)} (${md(wFrom)}~${md(lastDay)})</div>
       <div class="value">${fmt(wCur)}<span class="unit">건</span></div>
       ${delta(wCur, wPrev, `전주 같은 구간(${md(wpFrom)}~${md(wpTo)})`)}
     </div>
     <div class="kpi">
-      <div class="label">이번 달 (${mm}/1~${md(lastDay)})</div>
+      <div class="label">${mm}월 (${mm}/1~${md(lastDay)})</div>
       <div class="value">${fmt(mCur)}<span class="unit">건</span></div>
       ${delta(mCur, mPrev, `전월 같은 구간(${pmM}/1~${pmM}/${pmEndDay})`)}
     </div>
