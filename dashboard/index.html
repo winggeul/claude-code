@@ -18,6 +18,7 @@
     --border:       rgba(11,11,11,0.10);
     --good:         #006300;
     --critical:     #d03b3b;
+    --caution:      #8a5a00;
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
     --s5:#e87ba4; --s6:#008300; --s7:#4a3aa7; --s8:#e34948;
     --s9:#8c564b; --s10:#17919e; --s11:#7b6c00; --s12:#5b6b7a;
@@ -30,7 +31,7 @@
       --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
       --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
-      --good:#0ca30c; --critical:#d03b3b;
+      --good:#0ca30c; --critical:#d03b3b; --caution:#d99b2b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
       --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
     --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
@@ -42,7 +43,7 @@
     --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
     --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
     --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
-    --good:#0ca30c; --critical:#d03b3b;
+    --good:#0ca30c; --critical:#d03b3b; --caution:#d99b2b;
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
     --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
       }
@@ -64,6 +65,10 @@
   /* 토요일은 근무 형태가 달라 수치가 눈에 띄게 낮다. 한눈에 구분되게 표시한다. */
   tbody tr.sat td:first-child { color: var(--s1); font-weight: 600; }
   tbody tr.sat td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
+  tbody tr.gap td { background: var(--surface-2); color: var(--muted); font-style: italic; text-align: left; }
+  tbody tr.gap td:first-child, tbody tr.gap td.sum {
+    color: var(--caution); font-weight: 600; font-style: normal; background: var(--surface-2);
+  }
   tbody tr.hol td:first-child { color: var(--critical); font-weight: 600; }
   tbody tr.hol td { background: color-mix(in srgb, var(--critical) 6%, transparent); }
   td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
@@ -205,6 +210,7 @@
     <div class="chips">
       <span class="chip warn" id="chip-excl">협력점해피콜 제외</span>
       <span class="chip" id="chip-src">샘플 데이터</span>
+      <span class="chip warn" id="chip-gap" hidden></span>
     </div>
   </div>
 
@@ -455,11 +461,23 @@ function aggregate() {
     allTotals.set(g, (allTotals.get(g) || 0) + r.count);
   }
 
+  // 그날 받지 못하면 그 데이터는 영영 못 만든다. 나중에 뽑으면 기준이 달라지기 때문이다.
+  // 그러니 빠진 날은 조용히 사라지면 안 된다. 0건이 아니라 '미수집' 으로 세워 둔다.
+  // 일요일은 영업을 하지 않으므로 빠진 것이 아니다.
+  if (GRAIN === "day" && map.size) {
+    const had = [...map.keys()].sort();
+    for (let d = had[0]; d < had[had.length - 1]; d = shiftDays(d, 1)) {
+      if (dowOf(d) === 0 || map.has(d)) continue;
+      map.set(d, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, gap: true });
+    }
+  }
+
   const keys = [...map.keys()].sort();
   const buckets = keys.map(k => {
     const b = map.get(k);
     return {
       key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all, sub: b.sub, work: b.work || 0,
+      gap: !!b.gap,
       rest: GRAIN === "day" && isRest(k),
       tone: GRAIN === "day" ? toneOf(k) : "",
       why: GRAIN === "day" ? restWhy(k) : "",
@@ -553,7 +571,7 @@ function drawTrend(agg) {
   const iw = W - m.l - m.r, ih = H - m.t - m.b;
   // 토·일·공휴일은 인입이 평일의 1/3 수준이라 섞으면 추세가 톱니처럼 보인다.
   // 일자별에서는 그 날을 아예 빼고, 주·월별에서는 합계에서 뺀 값을 쓴다.
-  const pts = agg.buckets.filter(b => !(GRAIN === "day" && b.rest))
+  const pts = agg.buckets.filter(b => !b.gap && !(GRAIN === "day" && b.rest))
                          .map(b => ({ ...b, total: b.work }));
   if (!pts.length) return;
 
@@ -625,7 +643,7 @@ function drawStack(agg) {
   const host = el("plot-stack"), tip = el("tip-stack");
   host.querySelectorAll("svg").forEach(n => n.remove());
 
-  const pts = openBuckets(agg);
+  const pts = openBuckets(agg).filter(b => !b.gap);
   if (!pts.length) return;
 
   const colors = colorOf(agg.names);
@@ -895,8 +913,10 @@ function drawTable(agg) {
            `${c.label}<span class="caret">${c.open ? "▾" : "▸"}</span></th>`;
   }).join("") + `</tr>`;
 
-  const rowHtml = (b) =>
-    `<tr${b.tone ? ` class="${b.tone}"` : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
+  const rowHtml = (b) => b.gap
+    ? `<tr class="gap"><td>${b.label}</td><td class="sum">미수집</td>` +
+      `<td colspan="${cols.length}">그날 받지 못했습니다. 지금 다시 뽑으면 기준이 달라져 채우지 않습니다.</td></tr>`
+    : `<tr${b.tone ? ` class="${b.tone}"` : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
     `<td class="sum">${fmt(rowTotal(b))}</td>` +
     cols.map(c => {
       const v = cell(b, c);
@@ -983,6 +1003,13 @@ function render() {
     ` · 마지막 갱신 ${(DATA.generated || "").replace("T", " ").slice(0, 16)}`;
   const ex = DATA.excluded || [];
   el("chip-excl").textContent = ex.length ? `제외: ${ex.join(" · ")}` : "제외 항목 없음";
+  const present = new Set(days);
+  let gaps = 0;
+  for (let d = days[0]; d < days[days.length - 1]; d = shiftDays(d, 1))
+    if (dowOf(d) !== 0 && !present.has(d)) gaps++;
+  el("chip-gap").textContent = gaps ? `미수집 ${gaps}일` : "";
+  el("chip-gap").hidden = !gaps;
+
   el("chip-src").textContent = IS_SAMPLE ? "샘플 데이터" : "실제 수집 데이터";
   el("chip-src").classList.toggle("warn", IS_SAMPLE);
   const restDays = days.filter(isRest).length;

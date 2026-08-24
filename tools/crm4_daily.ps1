@@ -7,14 +7,19 @@
 
 사용:
     powershell -ExecutionPolicy Bypass -File crm4_daily.ps1
-    powershell -ExecutionPolicy Bypass -File crm4_daily.ps1 -Start 2026-07-01 -End 2026-08-21   과거분 한 번에
+    powershell -ExecutionPolicy Bypass -File crm4_daily.ps1 -Start 2026-08-20 -Backfill        지난 날짜 (기준이 달라짐)
     powershell -ExecutionPolicy Bypass -File crm4_daily.ps1 -SkipCollect                        이미 받은 CSV 만 집계
 #>
 
 param(
-    # 수집 범위. 비워 두면 마지막으로 받은 날 다음날부터 어제까지 알아서 메운다.
+    # 수집 범위. 비워 두면 어제 하루만 받는다.
+    # 빠진 날을 저절로 메우지 않는다. 지난 날짜를 지금 뽑으면 그날 뽑았을 때가 아니라
+    # 오늘 기준으로 갱신된 값이 나와서, 다음날 받아 둔 다른 날들과 기준이 어긋난다.
     [datetime]$Start,
     [datetime]$End = (Get-Date).Date.AddDays(-1),
+
+    # 지난 날짜를 받겠다고 분명히 밝히는 스위치.
+    [switch]$Backfill,
 
     # 수집을 건너뛰고 이미 있는 CSV 만 집계한다. 과거분 파일을 직접 넣었을 때 쓴다.
     [switch]$SkipCollect,
@@ -92,12 +97,17 @@ if ($SkipCollect) {
     $collectArgs = @("-ExecutionPolicy", "Bypass", "-File", $Collect, "-RawRoot", $RawRoot,
                      "-LogFile", $LogFile, "-End", $End.ToString("yyyy-MM-dd"))
     if ($PSBoundParameters.ContainsKey("Start")) { $collectArgs += @("-Start", $Start.ToString("yyyy-MM-dd")) }
+    if ($Backfill) { $collectArgs += "-Backfill" }
 
     Say "수집 시작" "Cyan"
     $log | Out-File $LogFile -Encoding utf8 -Append    # 수집기가 이어 쓰기 전에 여기까지 먼저 남긴다
     $log.Clear()
     & powershell @collectArgs
-    if ($LASTEXITCODE -ne 0) { Say "수집이 정상 종료되지 않았습니다 (코드 $LASTEXITCODE). 받아둔 파일만으로 계속합니다." "Yellow" }
+    if ($LASTEXITCODE -eq 2) {
+        Say "지난 날짜라 받지 않았습니다. 기준을 맞추려면 그날 다음날에 받아야 합니다." "Yellow"
+    } elseif ($LASTEXITCODE -ne 0) {
+        Say "수집이 정상 종료되지 않았습니다 (코드 $LASTEXITCODE). 받아둔 파일만으로 계속합니다." "Yellow"
+    }
 }
 
 # ─── 2. 집계 ───────────────────────────────────────

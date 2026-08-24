@@ -60,7 +60,19 @@ powershell -ExecutionPolicy Bypass -File .\crm4_collect.ps1 -RawRoot .\raw -Diag
 그 사이에 유입경로가 바뀌거나 지워진 건이 섞이므로, 과거분과 앞으로 쌓일 분의 기준이 어긋납니다.
 그래서 과거분은 그날 뽑아 두신 파일을 그대로 센 값만 씁니다.
 
-수집기는 `store.json` 의 마지막 날 다음날부터 채우므로, 8월 21일부터 알아서 이어집니다.
+수집기는 **어제 하루만** 받습니다. 빠진 날을 저절로 메우지 않습니다.
+
+같은 이유에서입니다. 어제치는 오늘 뽑아야 그날 상태 그대로이고, 그저께치를 오늘 뽑으면
+이미 갱신된 값이 나와 다른 날과 기준이 어긋납니다. 그래서 못 받은 날은 그냥 비워 둡니다.
+
+대시보드는 그런 날을 **미수집**으로 한 줄 세우고 위쪽에 `미수집 N일` 이라고 적습니다.
+숫자가 0으로 떨어진 것처럼 보이는 일은 없습니다.
+
+기준이 달라져도 좋으니 굳이 받아야 한다면 `-Backfill` 을 함께 줘야 합니다.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1 -Start 2026-08-25 -Backfill
+```
 
 나중에 또 하루치씩 시트로 나뉜 xlsx 를 넣어야 하면:
 
@@ -102,24 +114,30 @@ powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1
 $action  = New-ScheduledTaskAction -Execute "powershell.exe" `
            -Argument "-ExecutionPolicy Bypass -File C:\CRM자동화\crm4_daily.ps1" `
            -WorkingDirectory "C:\CRM자동화"
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$set     = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 3)
+$trigger = New-ScheduledTaskTrigger -Daily -At 6am
+$set     = New-ScheduledTaskSettingsSet -StartWhenAvailable `
+           -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew
 
 Register-ScheduledTask -TaskName "CRM4 일일수집" -Action $action -Trigger $trigger `
                        -Settings $set -RunLevel Highest -Force
 ```
 
-로그온할 때마다 실행됩니다. 며칠 꺼져 있었어도 켜지는 순간 밀린 날짜를 메웁니다.
+매일 새벽 6시에 **어제치 하루만** 받습니다. 일요일은 영업을 하지 않으므로 건너뜁니다.
 
-새벽 정해진 시각으로 하려면 트리거 줄만 바꿉니다. 다만 그 시각에 PC가 켜져 있고
-CRM4가 떠 있어야 하므로, 로그온 방식이 더 안전합니다.
+PC 를 계속 켜 두시므로 시각 지정이 맞습니다. 로그온 방식은 재부팅을 해야 돌기 때문에 쓰지 않습니다.
+시각을 바꾸려면 `-At 6am` 만 고치면 됩니다. 자정만 넘기면 언제든 어제치가 온전히 나옵니다.
 
-```powershell
-$trigger = New-ScheduledTaskTrigger -Daily -At 3am
-```
+그날 못 돌면 그 날짜는 비워 둡니다. 뒤늦게 받으면 기준이 달라지기 때문입니다.
 
-CRM4 와 `통합고객목록` 창이 떠 있어야 동작하므로, CRM4 를 **시작 프로그램에 등록**하고
-로그인 후 통합고객목록 창을 열어 둔 채로 두는 것이 좋습니다.
+### PC 를 계속 켜 둘 때 같이 해 둘 것
+
+화면이 꺼지거나 잠기면 스크립트가 창을 앞으로 가져오지 못합니다.
+
+1. **설정 › 시스템 › 전원** — 화면 끄기와 절전을 모두 `안 함` 으로
+2. **화면 보호기 설정** — `다시 시작할 때 로그온 화면 표시` 체크 해제
+3. **CRM4 를 시작 프로그램에 등록** 하고 `통합고객목록` 창을 열어 둔 채로 두기
+
+수동 잠금(Win+L)도 하지 마세요. 잠긴 상태에서는 실패하고 그날은 비워집니다.
 
 ## 확인과 문제 해결
 

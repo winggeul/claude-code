@@ -18,9 +18,16 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RawRoot,
 
-    # 수집할 등록일 범위. -Start 를 주지 않으면 마지막으로 받은 날 다음날부터 이어받는다.
+    # 수집할 등록일 범위. 주지 않으면 어제 하루만 받는다.
+    #
+    # 지난 날짜를 지금 뽑으면 그날 뽑았을 때가 아니라 오늘 기준으로 갱신된 상태가 나온다.
+    # 그 사이 유입경로가 바뀌거나 지워진 건이 섞이므로 다른 날과 기준이 어긋난다.
+    # 그래서 빠진 날은 저절로 메우지 않는다. 굳이 받아야 하면 -Start 와 -Backfill 을 함께 준다.
     [datetime]$Start,
     [datetime]$End = (Get-Date).Date.AddDays(-1),
+
+    # 지난 날짜를 받겠다고 분명히 밝히는 스위치. -Start 를 과거로 줄 때 필요하다.
+    [switch]$Backfill,
 
     # 클릭을 전혀 하지 않고, 컨트롤을 제대로 찾는지만 확인한다.
     [switch]$Diagnose,
@@ -368,16 +375,20 @@ foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFr
     if (-not $ctrls[$k]) { Write-Host "`n$k 을(를) 찾지 못해 중단합니다." -ForegroundColor Red; exit 1 }
 }
 
-if (-not $PSBoundParameters.ContainsKey('Start')) {
-    $done = Get-ChildItem $RawRoot -Filter "customers_*.csv" -ErrorAction SilentlyContinue |
-            ForEach-Object { if ($_.BaseName -match '(\d{4}-\d{2}-\d{2})') { [datetime]$Matches[1] } } |
-            Sort-Object -Descending | Select-Object -First 1
-    if ($done) {
-        $Start = $done.AddDays(1)
-        Write-Host "마지막 수집일: $($done.ToString('yyyy-MM-dd')) - 그 다음날부터 이어받습니다." -ForegroundColor Gray
-    } else {
-        $Start = $End
-    }
+# 기본은 어제 하루뿐이다. 밀린 날을 알아서 메우지 않는다.
+$yesterday = (Get-Date).Date.AddDays(-1)
+if (-not $PSBoundParameters.ContainsKey('Start')) { $Start = $End }
+
+if (($Start -lt $yesterday) -and -not $Backfill) {
+    Write-Host ""
+    Write-Host "$($Start.ToString('yyyy-MM-dd')) 은(는) 어제보다 이전입니다." -ForegroundColor Red
+    Write-Host "지금 뽑으면 그날 뽑았을 때가 아니라 오늘 기준으로 갱신된 값이 나옵니다." -ForegroundColor Yellow
+    Write-Host "다른 날과 기준이 달라지므로 받지 않습니다." -ForegroundColor Yellow
+    Write-Host "그래도 받아야 하면 -Backfill 을 함께 주세요." -ForegroundColor Gray
+    exit 2
+}
+if ($Backfill -and $Start -lt $yesterday) {
+    Write-Log "경고: 지난 날짜를 받습니다. 이 값은 다음날 받은 다른 날과 기준이 다릅니다." "Yellow"
 }
 if ($Start -gt $End) { Write-Host "받을 날짜가 없습니다." -ForegroundColor Green; exit 0 }
 
