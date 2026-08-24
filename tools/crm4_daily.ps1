@@ -75,6 +75,18 @@ function Say([string]$msg, [string]$color = "Gray") {
     $log.Add($line)
 }
 
+# 바깥 프로그램이 stderr 에 한 줄만 써도 PowerShell 은 그것을 오류로 올린다.
+# ErrorActionPreference 가 Stop 이면 거기서 스크립트가 죽는다 - 버셀은 배너를 stderr 에 쓴다.
+# 그래서 바깥 프로그램은 전부 이 함수를 거친다. 성공·실패 판단은 종료 코드로만 한다.
+function Invoke-Native([string]$exe, [string[]]$argv) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $out = & $exe @argv 2>&1 | ForEach-Object { "$_" }
+        return [pscustomobject]@{ Out = $out; Code = $LASTEXITCODE }
+    } finally { $ErrorActionPreference = $prev }
+}
+
 function Fail([string]$msg) {
     Say $msg "Red"
     $log | Out-File $LogFile -Encoding utf8 -Append
@@ -140,11 +152,13 @@ if ($SkipCollect -or $nothingToCollect) {
     Say "수집 시작" "Cyan"
     $log | Out-File $LogFile -Encoding utf8 -Append    # 수집기가 이어 쓰기 전에 여기까지 먼저 남긴다
     $log.Clear()
-    & powershell @collectArgs
-    if ($LASTEXITCODE -eq 2) {
+    $col = Invoke-Native "powershell" $collectArgs
+    $col.Out | ForEach-Object { Write-Host $_ }
+    $LASTEXITCODE = $col.Code
+    if ($col.Code -eq 2) {
         Say "지난 날짜라 받지 않았습니다. 기준을 맞추려면 그날 다음날에 받아야 합니다." "Yellow"
-    } elseif ($LASTEXITCODE -ne 0) {
-        Say "수집이 정상 종료되지 않았습니다 (코드 $LASTEXITCODE). 받아둔 파일만으로 계속합니다." "Yellow"
+    } elseif ($col.Code -ne 0) {
+        Say "수집이 정상 종료되지 않았습니다 (코드 $($col.Code)). 받아둔 파일만으로 계속합니다." "Yellow"
     }
 }
 
@@ -158,9 +172,9 @@ Say "집계 시작 (CSV $($csv.Count)개)" "Cyan"
 $aggArgs = @($Agg, "--raw", $RawRoot, "--store", $Store, "--template", $Template, "--out", $OutFile)
 if (-not $KeepRaw) { $aggArgs += "--delete" }
 
-$aggOut = & node @aggArgs 2>&1
-$aggOut | ForEach-Object { Say "  $_" }
-if ($LASTEXITCODE -ne 0) { Fail "집계 실패. 원본 CSV 는 지우지 않았으므로 다음 실행에서 다시 시도됩니다." }
+$agg = Invoke-Native "node" $aggArgs
+$agg.Out | ForEach-Object { Say "  $_" }
+if ($agg.Code -ne 0) { Fail "집계 실패. 원본 CSV 는 지우지 않았으므로 다음 실행에서 다시 시도됩니다." }
 if (-not (Test-Path $OutFile)) { Fail "결과 파일이 만들어지지 않았습니다." }
 
 # ─── 3. 배포 ───────────────────────────────────────
@@ -177,10 +191,14 @@ if ($SkipDeploy) {
     if (-not $npx) { Fail "npx 를 찾지 못했습니다. Node.js 설치를 확인하세요. 결과는 $OutFile 에 있습니다." }
 
     Say "배포 시작" "Cyan"
-    $depOut = & $npx.Source --yes vercel deploy $SiteDir --prod --yes --token $VercelToken 2>&1
-    $depOut | ForEach-Object { Say "  $_" }
-    if ($LASTEXITCODE -ne 0) { Fail "배포 실패. 집계 결과는 $OutFile 에 있습니다." }
-    Say "배포 완료" "Green"
+    $dep = Invoke-Native $npx.Source @("--yes", "vercel", "deploy", $SiteDir, "--prod", "--yes", "--token", $VercelToken)
+    $dep.Out | ForEach-Object { Say "  $_" }
+    if ($dep.Code -ne 0) { Fail "배포 실패. 집계 결과는 $OutFile 에 있습니다." }
+
+    # 올라간 주소를 로그 맨 끝에 한 줄로 남긴다. 나중에 찾기 쉽게.
+    $url = $dep.Out | Where-Object { $_ -match "https://[^\s]+\.vercel\.app" } | Select-Object -Last 1
+    if ($url -and $url -match "(https://[^\s]+\.vercel\.app)") { Say "배포 완료 - $($Matches[1])" "Green" }
+    else { Say "배포 완료" "Green" }
 }
 
 Say "=== 끝 ===" "Cyan"
