@@ -31,7 +31,10 @@ param(
     [switch]$KeepRaw,
 
     # 이미 받아 둔 날이어도 그냥 진행한다.
-    [switch]$Force
+    [switch]$Force,
+
+    # 화면 틀을 받아오지 않는다. 그 PC 에서 직접 고쳐 쓸 때만 쓴다.
+    [switch]$SkipTemplate
 )
 
 # ─────────── 설정 (한 번만 고치면 된다) ───────────
@@ -55,6 +58,11 @@ $Agg      = Join-Path $Base "aggregate.mjs"
 
 # 버셀 토큰. 환경변수에 두는 편이 안전하지만, 없으면 아래에 직접 적어도 된다.
 $VercelToken = $env:VERCEL_TOKEN
+
+# 화면 틀을 받아올 곳. 이 주소의 파일로 template.html 을 갈아끼운다.
+# 화면만 고치는 일에 이 PC 까지 오지 않으려고 둔 길이다. 데이터는 오가지 않는다.
+# 쓰지 않으려면 빈 문자열로 두면 된다.
+$TemplateUrl = "https://raw.githubusercontent.com/winggeul/claude-code/refs/heads/claude/crm-data-connection-2nbows/dashboard/index.html"
 
 # ─────────────────────────────────────────────────
 
@@ -137,6 +145,40 @@ if ($nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
     Say "할 일이 없습니다." "Green"
     $log | Out-File $LogFile -Encoding utf8 -Append
     exit 0
+}
+
+# ─── 0.5 화면 틀 갱신 ──────────────────────────────
+#
+# 받아온 것이 멀쩡할 때만 갈아끼운다. 인터넷이 끊겼거나 주소가 죽었으면 그냥 넘어간다.
+# 화면 모양 때문에 그날 수집을 통째로 날리는 일은 없어야 한다.
+
+if ($TemplateUrl -and -not $SkipTemplate) {
+    try {
+        $tmp = Join-Path $env:TEMP ("crm4_template_" + [guid]::NewGuid().ToString("N") + ".html")
+        $old = [System.Net.ServicePointManager]::SecurityProtocol
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $TemplateUrl -OutFile $tmp -UseBasicParsing -TimeoutSec 30
+        [System.Net.ServicePointManager]::SecurityProtocol = $old
+
+        $fresh = Get-Content $tmp -Raw -Encoding UTF8
+
+        # 최소한의 확인. 데이터 자리가 없으면 집계가 숫자를 넣을 곳이 없다.
+        if ($fresh.Length -lt 10000) { throw "받은 파일이 너무 작습니다 ($($fresh.Length) 바이트)" }
+        if ($fresh -notmatch [regex]::Escape("/*__DATA__*/")) { throw "데이터 자리를 찾지 못했습니다" }
+        if ($fresh -notmatch [regex]::Escape("/*__END__*/"))  { throw "데이터 자리가 닫히지 않았습니다" }
+
+        $same = (Test-Path $Template) -and ((Get-Content $Template -Raw -Encoding UTF8) -eq $fresh)
+        if ($same) {
+            Say "화면 틀 최신"
+        } else {
+            Copy-Item $Template ($Template + ".bak") -Force -ErrorAction SilentlyContinue
+            [System.IO.File]::WriteAllText($Template, $fresh, (New-Object System.Text.UTF8Encoding $false))
+            Say "화면 틀을 새로 받았습니다 ($($fresh.Length) 바이트). 이전 것은 template.html.bak" "Green"
+        }
+        Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    } catch {
+        Say "화면 틀을 받지 못해 기존 것을 씁니다: $($_.Exception.Message)" "Yellow"
+    }
 }
 
 # ─── 1. 수집 ───────────────────────────────────────

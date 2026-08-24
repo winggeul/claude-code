@@ -167,8 +167,21 @@ PC 를 계속 켜 두시므로 시각 지정이 맞습니다. 로그온 방식�
 
 ## 나중에 화면을 바꾸고 싶을 때
 
-글꼴·색·표 구성처럼 보이는 것은 전부 `template.html` 한 파일에 들어 있습니다.
-설치를 다시 할 필요도, 데이터를 다시 받을 필요도 없습니다.
+**보통은 아무것도 안 하셔도 됩니다.** 스크립트가 매일 돌기 전에 아래 주소에서
+`template.html` 을 받아 갈아끼웁니다. 화면을 고쳐 올려 두면 다음 날 아침에 반영됩니다.
+
+```
+https://raw.githubusercontent.com/winggeul/claude-code/refs/heads/claude/crm-data-connection-2nbows/dashboard/index.html
+```
+
+받은 파일이 이상하면(너무 작거나, 데이터 자리가 없거나) 버리고 기존 것을 씁니다.
+인터넷이 안 되면 그냥 넘어갑니다. 화면 때문에 그날 수집을 날리지 않습니다.
+바꾸기 전 파일은 `template.html.bak` 으로 남습니다.
+
+받아오지 않게 하려면 `crm4_daily.ps1` 위쪽의 `$TemplateUrl` 을 `""` 로 두거나
+`-SkipTemplate` 을 붙여 실행하면 됩니다.
+
+직접 바꾸실 때는:
 
 1. 새 `template.html` 을 받아 폴더 안의 것과 바꿔치기
 2. 바로 반영하려면 아래 실행 (수집은 건너뛰고 화면만 다시 만들어 올립니다)
