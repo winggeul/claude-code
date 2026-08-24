@@ -99,8 +99,11 @@ New-Item -ItemType Directory -Path $SiteDir -Force | Out-Null
 $target = $End.Date
 $lastDay = ""
 if (Test-Path $Store) {
-    $js = 'const fs=require("fs");try{const s=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));const d=s.rows.map(r=>r.date).sort();console.log(d[d.length-1]||"")}catch{console.log("")}'
-    $lastDay = (& node -e $js $Store | Select-Object -First 1)
+    $raw = Get-Content $Store -Raw -Encoding UTF8
+    $hit = [regex]::Matches($raw, '"date"\s*:\s*"(\d{4}-\d{2}-\d{2})"')
+    if ($hit.Count -gt 0) {
+        $lastDay = ($hit | ForEach-Object { $_.Groups[1].Value } | Sort-Object | Select-Object -Last 1)
+    }
 }
 
 $nothingToCollect = $false
