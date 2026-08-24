@@ -222,8 +222,10 @@ if (!marker.test(tpl)) {
 const html = tpl.replace(marker, () => `/*__DATA__*/${JSON.stringify(store)}/*__END__*/`);
 
 fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
-fs.writeFileSync(args.out, html);
+// 누적본을 먼저 쓰고 화면을 나중에 쓴다. 순서가 반대면 화면이 늘 '오래된 것' 으로 보여서
+// 받을 것이 없는 날에도 두 시간마다 같은 내용을 다시 만들어 올리게 된다.
 fs.writeFileSync(args.store, JSON.stringify(store));
+fs.writeFileSync(args.out, html);
 
 const days = [...new Set(store.rows.map(r => r.date))].sort();
 console.log(`\n누적 ${store.rows.length}줄 · ${days.length}일 (${days[0]} ~ ${days[days.length - 1]})`);
