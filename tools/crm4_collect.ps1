@@ -177,9 +177,20 @@ function Resolve-Controls([IntPtr]$win) {
 
     if ($chk) {
         $picks = @($all | Where-Object {
-            $_.Class -match "SysDateTimePick32" -and [Math]::Abs($_.T - $chk.T) -le 8
+            $_.Class -match "SysDateTimePick32" -and $_.Visible -and $_.W -gt 20 -and
+            [Math]::Abs($_.T - $chk.T) -le 8
         } | Sort-Object L)
-        if ($picks.Count -ge 2) { $c.DateFrom = $picks[0]; $c.DateTo = $picks[1] }
+
+        # 같은 자리에 날짜 칸이 겹쳐 있다. 그대로 두면 앞의 둘이 모두 '시작일' 이 되어
+        # 종료일이 영영 입력되지 않는다. 가로 위치가 겹치는 것은 하나로 본다.
+        $spread = @()
+        foreach ($p in $picks) {
+            $dup = $false
+            foreach ($q in $spread) { if ([Math]::Abs($q.L - $p.L) -le 4) { $dup = $true; break } }
+            if (-not $dup) { $spread += $p }
+        }
+        $c.DatePicks = $spread
+        if ($spread.Count -ge 2) { $c.DateFrom = $spread[0]; $c.DateTo = $spread[1] }
     }
 
     $c.SelectAll = $all | Where-Object { $_.Class -match "BUTTON" -and $_.Text -eq "전체선택" } | Select-Object -First 1
@@ -396,7 +407,15 @@ foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFr
     }
 }
 
-if ($Diagnose) { Write-Host "`n점검 모드였습니다. 클릭하지 않았습니다." -ForegroundColor Cyan; exit 0 }
+if ($Diagnose) {
+    $dp = @($ctrls.DatePicks)
+    $where = ($dp | ForEach-Object { "($($_.L),$($_.T)) w$($_.W)" }) -join "  "
+    Write-Host ""
+    Write-Host ("날짜 칸 {0}개: {1}" -f $dp.Count, $where) -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "점검 모드였습니다. 클릭하지 않았습니다." -ForegroundColor Cyan
+    exit 0
+}
 
 foreach ($k in @("Tab","PageFilter","PageList","PageProcess","DateCheck","DateFrom","DateTo","Search","CountLabel","Excel")) {
     if (-not $ctrls[$k]) { Write-Host "`n$k 을(를) 찾지 못해 중단합니다." -ForegroundColor Red; exit 1 }
