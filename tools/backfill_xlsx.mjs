@@ -127,6 +127,17 @@ const SERIAL_RE = /^\d{5}(\.\d+)?$/;
 // 일련번호는 시간대 없는 값이라 UTC 로 계산해야 하루가 밀리지 않는다.
 const serialToIso = (n) => new Date(EPOCH + Math.floor(n) * 86400000).toISOString().slice(0, 10);
 
+/** 등록일 열. 거의 모든 행이 일련번호인 열 중 가장 왼쪽을 쓴다. */
+function findDateColumn(rows, skip) {
+  const width = Math.max(0, ...rows.map(r => r.length));
+  for (let i = 0; i < width; i++) {
+    if (i === skip) continue;
+    const vals = rows.map(r => (r[i] ?? "").trim());
+    if (vals.filter(v => SERIAL_RE.test(v)).length >= rows.length * 0.95) return i;
+  }
+  return -1;
+}
+
 /**
  * 시트 이름이 '07-01' 이라 연도가 없다. 행 안의 등록일 일련번호에서 연도를 얻고,
  * 월·일이 시트 이름과 맞는지 확인한다. 맞지 않으면 --year 로 떨어진다.
@@ -160,6 +171,17 @@ function resolveDate(rows, sheetName, fallbackYear) {
 const CODE_RE = /\(\d{3,5}\)/;
 // 유입경로 칸에 전화번호가 들어간 건. 그대로 두면 공개 화면에 고객 번호가 실린다.
 const PHONE_RE = /^\d{2,4}-\d{3,4}-\d{4}$/;
+
+// 유입경로 자리에 전화번호나 날짜가 오는 행이 있다. 그런 행은 한 칸 옆으로 밀려 있다.
+const looksLikeChannel = (v) => !!v && !SERIAL_RE.test(v) && !PHONE_RE.test(v);
+
+/** 그 행의 유입경로. 기본 열이 유입경로가 아니면 바로 옆 칸을 본다. */
+function channelAt(row, col) {
+  const here = (row[col] ?? "").trim();
+  if (looksLikeChannel(here)) return here;
+  const next = (row[col + 1] ?? "").trim();
+  return looksLikeChannel(next) ? next : here;
+}
 
 /** 헤더가 없으므로 괄호 코드가 붙는 비율이 가장 높은 열을 유입경로로 본다. */
 function findChannelColumn(rows) {
@@ -229,35 +251,47 @@ for (const sh of sheets) {
   const rows = sheetRows(xml, strs).filter(r => r.some(v => (v ?? "").trim()));
   if (!rows.length) { console.error(`  건너뜀 ${sh.name} — 빈 시트`); warned++; continue; }
 
-  const { date, match } = resolveDate(rows, sh.name, args.year);
-  if (!date) { console.error(`  건너뜀 ${sh.name} — 날짜를 읽지 못함`); warned++; continue; }
-
   const { col, rate } = findChannelColumn(rows);
   if (col < 0) { console.error(`  건너뜀 ${sh.name} — 유입경로 열을 찾지 못함`); warned++; continue; }
 
+  // 시트 하나가 하루면 시트 이름이 날짜다. 여러 날이 한 시트에 있으면 행마다 읽는다.
+  const { date, match } = resolveDate(rows, sh.name, args.year);
+  const dateCol = date ? -1 : findDateColumn(rows, col);
+  if (!date && dateCol < 0) { console.error(`  건너뜀 ${sh.name} — 날짜를 읽지 못함`); warned++; continue; }
+
   const tally = new Map();
+  const seen = new Map();
   let dropped = 0;
   for (const r of rows) {
-    const raw = (r[col] ?? "").trim();
+    const day = date || serialToIso(+(r[dateCol] ?? "").trim());
+    const raw = channelAt(r, col);
     if (args.audit) {
       const why = !raw ? "빈값"
                 : PHONE_RE.test(raw) ? "전화번호"
                 : (EXCLUDE.find(x => raw.startsWith(x)) ? "제외:" + EXCLUDE.find(x => raw.startsWith(x)) : "집계");
-      const k = why + "\t" + (raw || "(비어 있음)") + "\t" + date;
+      const k = why + "\t" + (raw || "(비어 있음)") + "\t" + day;
       AUDIT.set(k, (AUDIT.get(k) || 0) + 1);
     }
     if (EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
     const ch = (!raw || PHONE_RE.test(raw)) ? UNSET : raw;
-    tally.set(ch, (tally.get(ch) || 0) + 1);
+    const key = day + "\t" + ch;
+    tally.set(key, (tally.get(key) || 0) + 1);
+    seen.set(day, (seen.get(day) || 0) + 1);
   }
 
-  const counts = [...tally].map(([channel, count]) => ({ date, channel, count }));
+  const counts = [...tally].map(([k, count]) => {
+    const [date, channel] = k.split("\t");
+    return { date, channel, count };
+  });
   all.push(...counts);
 
   const kept = counts.reduce((s, c) => s + c.count, 0);
-  const flag = match < 0.8 ? "  ← 등록일 확인 필요" : "";
-  if (match < 0.8) warned++;
-  console.log(`  ${date}  ${String(kept).padStart(4)}건 (원본 ${rows.length} · 제외 ${dropped}) 열${col} ${Math.round(rate * 100)}%${flag}`);
+  const span = [...seen.keys()].sort();
+  const label = span.length === 1 ? span[0] : `${span[0]} ~ ${span[span.length - 1]} (${span.length}일)`;
+  const flag = (date && match < 0.8) ? "  ← 등록일 확인 필요" : "";
+  if (date && match < 0.8) warned++;
+  console.log(`  ${label}  ${String(kept).padStart(4)}건 (원본 ${rows.length} · 제외 ${dropped}) 열${col} ${Math.round(rate * 100)}%${flag}`);
+  if (span.length > 1) for (const d of span) console.log(`      ${d}  ${String(seen.get(d)).padStart(4)}행`);
 }
 
 if (args.audit) {
