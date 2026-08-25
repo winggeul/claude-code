@@ -34,7 +34,11 @@ param(
     [switch]$Force,
 
     # 화면 틀을 받아오지 않는다. 그 PC 에서 직접 고쳐 쓸 때만 쓴다.
-    [switch]$SkipTemplate
+    [switch]$SkipTemplate,
+
+    # 화면 틀만 본다. 바뀐 것이 없으면 아무것도 하지 않고 곧바로 끝난다.
+    # 바뀌었으면 수집 없이 화면만 다시 만들어 올린다. 몇 분마다 돌려도 부담이 없다.
+    [switch]$TemplateOnly
 )
 
 # ─────────── 설정 (한 번만 고치면 된다) ───────────
@@ -53,6 +57,9 @@ $SiteDir = Join-Path $Base "site"
 $OutFile = Join-Path $SiteDir "index.html"
 
 $Template = Join-Path $Base "template.html"
+
+# 수집이 도는 동안 화면 갱신이 끼어들면 누적본을 동시에 건드리게 된다. 그것을 막는 표시다.
+$Lock = Join-Path $Base "run.lock"
 $Collect  = Join-Path $Base "crm4_collect.ps1"
 $Agg      = Join-Path $Base "aggregate.mjs"
 
@@ -98,6 +105,7 @@ function Invoke-Native([string]$exe, [string[]]$argv) {
 }
 
 function Fail([string]$msg) {
+    Remove-Item $Lock -Force -ErrorAction SilentlyContinue
     Say $msg "Red"
     $log | Out-File $LogFile -Encoding utf8 -Append
     Write-Host "로그: $LogFile"
@@ -140,9 +148,11 @@ if (-not $Force -and -not $SkipCollect) {
 }
 
 # 받을 것도 없고 화면도 최신이면 아무것도 하지 않는다.
-if ($nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
+# 화면 틀만 보는 실행은 여기서 끝내면 안 된다. 틀 확인은 아래에서 한다.
+if (-not $TemplateOnly -and $nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
     ((Get-Item $OutFile).LastWriteTime -ge (Get-Item $Store).LastWriteTime)) {
     Say "할 일이 없습니다." "Green"
+    Remove-Item $Lock -Force -ErrorAction SilentlyContinue
     $log | Out-File $LogFile -Encoding utf8 -Append
     exit 0
 }
@@ -151,6 +161,15 @@ if ($nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
 #
 # 받아온 것이 멀쩡할 때만 갈아끼운다. 인터넷이 끊겼거나 주소가 죽었으면 그냥 넘어간다.
 # 화면 모양 때문에 그날 수집을 통째로 날리는 일은 없어야 한다.
+
+# 수집이 도는 중이면 화면 갱신은 다음 차례로 미룬다.
+if ($TemplateOnly -and (Test-Path $Lock)) {
+    $age = (Get-Date) - (Get-Item $Lock).LastWriteTime
+    if ($age.TotalMinutes -lt 30) { exit 0 }
+}
+
+$TemplateChanged = $false
+$TemplateFailed = $false
 
 if ($TemplateUrl -and -not $SkipTemplate) {
     try {
@@ -169,17 +188,30 @@ if ($TemplateUrl -and -not $SkipTemplate) {
 
         $same = (Test-Path $Template) -and ((Get-Content $Template -Raw -Encoding UTF8) -eq $fresh)
         if ($same) {
-            Say "화면 틀 최신"
+            if (-not $TemplateOnly) { Say "화면 틀 최신" }
         } else {
+            $TemplateChanged = $true
             Copy-Item $Template ($Template + ".bak") -Force -ErrorAction SilentlyContinue
             [System.IO.File]::WriteAllText($Template, $fresh, (New-Object System.Text.UTF8Encoding $false))
             Say "화면 틀을 새로 받았습니다 ($($fresh.Length) 바이트). 이전 것은 template.html.bak" "Green"
         }
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     } catch {
+        $TemplateFailed = $true
         Say "화면 틀을 받지 못해 기존 것을 씁니다: $($_.Exception.Message)" "Yellow"
     }
 }
+
+# 화면 틀만 보는 실행. 바뀐 것이 없으면 로그도 남기지 않고 조용히 끝낸다.
+if ($TemplateOnly) {
+    if (-not $TemplateChanged) {
+        if ($TemplateFailed) { $log | Out-File $LogFile -Encoding utf8 -Append }
+        exit 0
+    }
+    $SkipCollect = $true
+}
+
+if (-not $TemplateOnly) { Set-Content $Lock (Get-Date -Format "s") -Encoding ascii }
 
 # ─── 1. 수집 ───────────────────────────────────────
 
@@ -253,6 +285,7 @@ if ($SkipDeploy) {
     if ($url) { Say "배포 완료 - $url" "Green" } else { Say "배포 완료" "Green" }
 }
 
+Remove-Item $Lock -Force -ErrorAction SilentlyContinue
 Say "=== 끝 ===" "Cyan"
 $log | Out-File $LogFile -Encoding utf8 -Append
 Write-Host "로그: $LogFile"

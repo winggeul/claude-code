@@ -165,6 +165,49 @@ PC 를 계속 켜 두시므로 시각 지정이 맞습니다. 로그온 방식�
 
 수동 잠금(Win+L)도 하지 마세요. 잠긴 상태에서는 실패하고 그날은 비워집니다.
 
+## 화면 갱신을 따로 돌리기
+
+데이터는 하루 한 번이면 되지만, 화면은 고치는 대로 바로 보이는 편이 낫습니다.
+그래서 작업을 둘로 나눕니다.
+
+| 작업 | 언제 | 무엇을 |
+|---|---|---|
+| `CRM4 일일수집` | 매일 06:00 | CRM4에서 어제치를 받아 세고 올린다 |
+| `CRM4 화면갱신` | 10분마다 | 화면 틀만 확인. 바뀌었을 때만 다시 만들어 올린다 |
+
+화면갱신 작업은 **CRM4를 건드리지 않습니다.** 틀이 그대로면 주소만 한 번 확인하고
+로그도 남기지 않은 채 곧바로 끝납니다. 바뀌었을 때만 집계본으로 화면을 다시 만들어 올립니다.
+수집이 도는 중에는 알아서 다음 차례로 미룹니다.
+
+**관리자 권한 PowerShell**에서 통째로 붙여넣으세요.
+
+```powershell
+$a = New-ScheduledTaskAction -Execute "powershell.exe" `
+     -Argument "-ExecutionPolicy Bypass -File C:\CRM자동화\crm4_daily.ps1 -TemplateOnly" `
+     -WorkingDirectory "C:\CRM자동화"
+
+$t = New-ScheduledTaskTrigger -Daily -At 12am
+$t.Repetition = (New-ScheduledTaskTrigger -Once -At 12am `
+                 -RepetitionInterval (New-TimeSpan -Minutes 10) `
+                 -RepetitionDuration (New-TimeSpan -Hours 24)).Repetition
+
+$s = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew `
+     -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+
+Register-ScheduledTask -TaskName "CRM4 화면갱신" -Action $a -Trigger $t `
+                       -Settings $s -RunLevel Highest -Force
+```
+
+등록되면 화면 수정은 올리는 즉시, 늦어도 10분 안에 반영됩니다.
+
+확인:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName "CRM4 화면갱신" | Select-Object LastRunTime, LastTaskResult, NextRunTime
+```
+
+`-RepetitionDuration` 에서 오류가 나면 `24` 를 `23` 으로 바꾸세요.
+
 ## 나중에 화면을 바꾸고 싶을 때
 
 **보통은 아무것도 안 하셔도 됩니다.** 스크립트가 매일 돌기 전에 아래 주소에서
