@@ -5,11 +5,13 @@
  *   POST /api/headcount   { "시흥": 6, "천안": 12 } 로 바꾼다
  *
  * 값은 버셀 Blob 에 파일 하나로 남는다. 배포를 다시 해도 지워지지 않는다.
+ * 저장소는 Private 이라 이 함수만 읽고 쓴다 - 바깥에서 파일 주소로 직접 열 수 없다.
+ *
  * 저장소를 아직 연결하지 않았으면 GET 은 기본값을, POST 는 왜 못 쓰는지를 돌려준다.
  * 그래야 화면이 조용히 틀린 숫자를 보여주는 일이 없다.
  */
 
-import { list, put } from "@vercel/blob";
+import { get, put } from "@vercel/blob";
 
 const DEFAULT = { "시흥": 5, "천안": 11 };
 const BRANCHES = Object.keys(DEFAULT);
@@ -30,14 +32,11 @@ function clean(body) {
 
 async function read() {
   if (!hasStore()) return null;
-  const { blobs } = await list({ prefix: FILE, limit: 1 });
-  if (!blobs.length) return null;
-  // Blob 주소는 CDN 을 타므로 방금 쓴 값이 아니라 이전 값이 올 수 있다.
-  // 뒤에 시각을 붙여 캐시를 비켜 간다.
-  const res = await fetch(`${blobs[0].url}?t=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) return null;
-  const saved = clean(await res.json());
-  return saved ? { ...saved, updated: blobs[0].uploadedAt } : null;
+  // useCache:false - 방금 다른 PC 가 쓴 값이 아니라 CDN 에 남은 옛 값이 오면 안 된다.
+  const res = await get(FILE, { access: "private", useCache: false });
+  if (!res || !res.stream) return null;                    // 아직 한 번도 저장한 적 없음
+  const saved = clean(await new Response(res.stream).json());
+  return saved ? { ...saved, updated: res.blob?.uploadedAt ?? null } : null;
 }
 
 export default async function handler(req, res) {
@@ -59,10 +58,10 @@ export default async function handler(req, res) {
         return res.status(400).json({ error: "인원은 1 이상 999 이하의 숫자여야 합니다." });
       }
       await put(FILE, JSON.stringify(value), {
-        access: "public",
+        access: "private",
         contentType: "application/json",
         addRandomSuffix: false,
-        allowOverwrite: true,
+        allowOverwrite: true,       // 늘 같은 파일 하나를 덮어쓴다
         cacheControlMaxAge: 0,
       });
       return res.status(200).json({ ...value, updated: new Date().toISOString() });

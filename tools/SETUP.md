@@ -141,10 +141,21 @@ powershell -ExecutionPolicy Bypass -File .\crm4_daily.ps1
 
 1. <https://vercel.com/dashboard> 에서 방금 만든 프로젝트를 엽니다
 2. 위쪽 **Storage** 탭 → **Create Database** → **Blob** 을 고릅니다
-3. 이름은 아무거나(예: `crm`) 두고 만듭니다
-4. 만든 뒤 **Connect Project** 로 이 프로젝트에 연결합니다
 
-연결하면 `BLOB_READ_WRITE_TOKEN` 이 프로젝트에 저절로 들어갑니다. 따로 적을 것은 없습니다.
+`Create Blob Store` 창이 뜨면 이렇게 둡니다.
+
+| 칸 | 어떻게 |
+|---|---|
+| Store Name | 적혀 있는 그대로 두면 됩니다 |
+| Region | 그대로 두면 됩니다 (파일 하나뿐이라 어디든 상관없습니다) |
+| Access | **Private** 그대로 둡니다. 값은 이 화면의 서버만 읽고 씁니다 |
+| Custom Environment Variable Prefix | 비워 둡니다 |
+| **Add a read-write token env var to this connection** | **반드시 체크하세요** |
+
+마지막 체크만 빠지면 값을 읽고 쓸 열쇠가 안 들어가서, 눌러 고쳐도 그 화면에서만 바뀝니다.
+체크하면 `BLOB_READ_WRITE_TOKEN` 이 프로젝트에 저절로 들어갑니다. 따로 적을 것은 없습니다.
+
+만든 뒤 **Connect Project** 로 이 프로젝트에 연결합니다.
 
 그다음 한 번 배포하면 적용됩니다. 수집은 건너뛰고 화면만 다시 올립니다.
 
