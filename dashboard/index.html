@@ -26,30 +26,31 @@
     --font-ui: "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic", sans-serif;
     --font-num: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
   }
+  /* 어두운 화면. 보는 사람이 고른 것이 있으면 그것을, 없으면 기기 설정을 따른다. */
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       color-scheme: dark;
       --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
-    --foot:#25303d;
       --foot:#25303d;
       --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
       --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
       --good:#0ca30c; --critical:#d03b3b; --caution:#d99b2b;
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
       --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
-    --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
       --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
     }
   }
   :root[data-theme="dark"] {
-    color-scheme: dark;
-    --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
-    --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
-    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
-    --good:#0ca30c; --critical:#d03b3b; --caution:#d99b2b;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-    --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
-      }
+      color-scheme: dark;
+      --plane:#0d0d0d; --surface-1:#1a1a19; --surface-2:#232322; --surface-3:#2c2c2a;
+      --foot:#25303d;
+      --text-primary:#ffffff; --text:#ffffff; --text-secondary:#c3c2b7; --muted:#898781;
+      --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+      --good:#0ca30c; --critical:#d03b3b; --caution:#d99b2b;
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+      --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
+      --s9:#b07d75; --s10:#3ab5c2; --s11:#a08f1a; --s12:#8496a6;
+  }
 
   .topbar {
     position: sticky; top: 0; z-index: 20;
@@ -79,6 +80,8 @@
   }
   tbody tr.hol td:first-child { color: var(--critical); font-weight: 600; }
   tbody tr.hol td { background: color-mix(in srgb, var(--critical) 6%, transparent); }
+  td.br, th.br { border-left: 1px solid var(--grid); color: var(--text-secondary); }
+  thead th.br { color: var(--muted); }
   td.sum, th.sum { border-left: 1px solid var(--axis); font-weight: 600; }
   td.per, th.per { border-right: 1px solid var(--axis); color: var(--text-secondary); }
   thead th.per { color: var(--muted); }
@@ -109,6 +112,11 @@
   .chip.close span { color: var(--muted); font-size: 11px; }
   #open-chips:empty { display: none; }
   .chip.warn { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 35%, transparent); }
+  .chip-reset {
+    font: inherit; color: inherit; background: none; margin-left: 4px;
+    border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; cursor: pointer; opacity: .8;
+  }
+  .chip-reset:hover { opacity: 1; }
 
   .banner {
     background: color-mix(in srgb, var(--critical) 10%, var(--surface-1));
@@ -228,7 +236,20 @@
     z-index: 5; background: var(--foot);
     font-family: var(--font-ui); letter-spacing: .01em;
   }
-  tfoot td.sum, tfoot td.per { background: var(--foot); }
+  tfoot td.sum, tfoot td.per, tfoot td.br { background: var(--foot); }
+
+  /* 인원은 눌러서 바꿔 볼 수 있다. 바꾼 값은 이 화면에만 남는다. */
+  .headnum {
+    font: inherit; font-family: var(--font-num); color: var(--text-secondary);
+    background: none; border: 0; border-bottom: 1px dashed var(--muted);
+    padding: 0 1px; cursor: pointer;
+  }
+  .headnum:hover { color: var(--text); border-bottom-color: var(--text); }
+  .headnum.edit {
+    width: 3.2em; text-align: right; cursor: text;
+    border: 1px solid var(--axis); border-radius: 4px; background: var(--surface-1);
+  }
+  .kpi .value .sep { color: var(--muted); font-weight: 400; margin: 0 6px; }
 
   footer { color: var(--muted); font-size: 12px; margin-top: 26px; }
 
@@ -416,6 +437,9 @@ const TOP_N = 11;
 const EMBEDDED = /*__DATA__*/null/*__END__*/;
 
 let DATA = EMBEDDED || SAMPLE, IS_SAMPLE = !EMBEDDED, GRAIN = "day";
+// 샘플에는 담당자가 없다. 틀만 열어 봤을 때 지점 열이 통째로 비지 않도록 여기서 나눠 넣는다.
+// 실제 수집분은 담당자 열에서 갈라 온 값이 이미 붙어 있어 이 줄에 걸리지 않는다.
+if (IS_SAMPLE) DATA.rows.forEach((r, i) => { r.branch = (i % 3 === 0) ? "시흥" : "천안"; });
 
 const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt = (n) => n.toLocaleString("ko-KR");
@@ -455,18 +479,33 @@ const HOLIDAYS = new Set([
 ]);
 const HOLIDAY_YEARS = new Set([...HOLIDAYS].map(d => d.slice(0, 4)));
 
-// 달마다 상담 인원이 다르다. 새 달이 시작되면 여기에 한 줄 추가한다.
-// 등록되지 않은 달은 가장 최근에 적어 둔 인원으로 계산하고, 화면 위에 알린다.
+// 지점. 담당자 열에서 갈라 둔 값이라 이 두 가지만 온다.
+const BRANCHES = ["시흥", "천안"];
+const emptyBranches = () => ({ "시흥": 0, "천안": 0 });
+
+// 지점별 상담사 인원. 집계할 때 headcount.json 의 값이 화면에 함께 실려 온다.
+// 그래서 보는 사람이 누구든 같은 숫자를 본다. 파일이 없으면 이 기본값을 쓴다.
+const HEAD_BASE = { "시흥": 5, "천안": 11 };
+const HEAD_SHARED = { ...HEAD_BASE, ...(EMBEDDED?.headcount || {}) };
+// 화면에서 인원을 바꿔 보는 값. 바꾸면 이 사람 화면에서만 바뀌고, 새로 고치면 돌아온다.
+let HEAD = { ...HEAD_SHARED };
+const headTouched = () => BRANCHES.some(b => HEAD[b] !== HEAD_SHARED[b]);
+
+// 지난달은 인원이 지금과 달랐다. 그때 수치를 지금 인원으로 나누면 사실과 어긋난다.
 const HEADCOUNT = {
   "2026-07": 15,
-  "2026-08": 16,
 };
-const HEAD_MONTHS = Object.keys(HEADCOUNT).sort();
+/** 그 날의 전체 인원. 적어 둔 달은 그 값을, 나머지는 지금 지점 인원의 합을 쓴다. */
 function headOf(iso) {
   const m = iso.slice(0, 7);
-  if (HEADCOUNT[m]) return HEADCOUNT[m];
-  const near = HEAD_MONTHS.filter(k => k <= m).pop() || HEAD_MONTHS[HEAD_MONTHS.length - 1];
-  return HEADCOUNT[near] || 1;
+  return HEADCOUNT[m] || (HEAD["시흥"] + HEAD["천안"]);
+}
+/** 그 날의 지점 인원. 지난달 총원만 적어 두었으므로 비율대로 나눈다. */
+function headOfBranch(iso, b) {
+  const m = iso.slice(0, 7);
+  if (!HEADCOUNT[m]) return HEAD[b];
+  const share = HEAD[b] / (HEAD["시흥"] + HEAD["천안"]);
+  return HEADCOUNT[m] * share;
 }
 
 const DOW = ["일", "월", "화", "수", "목", "금", "토"];
@@ -522,9 +561,10 @@ function aggregate() {
   for (const r of DATA.rows) {
     const g = groupOf(r.channel);
     const k = bucketKey(r.date, GRAIN);
-    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, dates: new Set() });
+    if (!map.has(k)) map.set(k, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, br: emptyBranches(), work: 0, dates: new Set() });
     const b = map.get(k);
     b.dates.add(r.date);
+    if (r.branch in b.br) b.br[r.branch] += r.count;
     b.parts[top.includes(g) ? g : FOLD] += r.count;
     b.all[g] = (b.all[g] || 0) + r.count;
     const dk = detailKeyOf(r.channel);
@@ -540,7 +580,7 @@ function aggregate() {
     const had = [...map.keys()].sort();
     for (let d = had[0]; d < had[had.length - 1]; d = shiftDays(d, 1)) {
       if (dowOf(d) === 0 || map.has(d)) continue;
-      map.set(d, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, work: 0, dates: new Set(), gap: true });
+      map.set(d, { parts: Object.fromEntries(names.map(n => [n, 0])), all: {}, sub: {}, br: emptyBranches(), work: 0, dates: new Set(), gap: true });
     }
   }
 
@@ -548,7 +588,7 @@ function aggregate() {
   const buckets = keys.map(k => {
     const b = map.get(k);
     return {
-      key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all, sub: b.sub, work: b.work || 0,
+      key: k, label: bucketLabel(k, GRAIN), parts: b.parts, all: b.all, sub: b.sub, br: b.br, work: b.work || 0,
       gap: !!b.gap,
       // 인당 일평균의 분모. 토·일·공휴일은 빼고, 날마다 그 달 인원을 더한다.
       pdays: [...b.dates].filter(d => !isRest(d)).reduce((s, d) => s + headOf(d), 0),
@@ -856,7 +896,32 @@ function drawKpis(agg) {
   // 인당 일평균. 인원이 달마다 다르므로 날마다 그 달 인원을 더해 나눈다.
   const pdays = workDays.reduce((s, d) => s + headOf(d), 0);
   const perHead = pdays ? (workSum / pdays).toFixed(1) : "–";
-  const head = HEADCOUNT[lastDay.slice(0, 7)];
+  const head = headOf(lastDay);
+
+  // 지점 카드. 이번 달 총DB 와 인당 일평균을 한 줄에 같이 둔다.
+  const branchCard = (name) => {
+    let sum = 0;
+    for (const r of DATA.rows) {
+      if (r.branch !== name || r.date < mFrom || r.date > lastDay) continue;
+      sum += r.count;
+    }
+    // 인당의 분모는 전체와 같은 방식이다. 영업일마다 그 달의 그 지점 인원을 더한다.
+    let wSum = 0, wDays = 0;
+    for (const d of workDays) wDays += headOfBranch(d, name);
+    for (const r of DATA.rows) {
+      if (r.branch !== name || isRest(r.date) || r.date < mFrom || r.date > lastDay) continue;
+      wSum += r.count;
+    }
+    const per = wDays > 0 ? (wSum / wDays).toFixed(1) : "–";
+    return `
+    <div class="kpi">
+      <div class="label">${mm}월 ${name}</div>
+      <div class="value">${fmt(sum)}<span class="sep">/</span>${per}</div>
+      <div class="delta">총DB / 인당 · 상담사 <button class="headnum" data-branch="${name}"` +
+      ` title="눌러서 인원을 바꿔 봅니다. 이 화면에서만 바뀝니다.">${HEAD[name]}</button>명` +
+      ` · 영업일 ${workDays.length}일</div>
+    </div>`;
+  };
 
   // 최다 유입경로도 이번 달만 센다. 기간 전체로 보면 지난달 실적이 계속 끼어들어
   // 이번 달에 무엇이 잘 들어오는지가 안 보인다. 비율의 분모도 이번 달 합계다.
@@ -894,6 +959,7 @@ function drawKpis(agg) {
       <div class="value">${fmt(mCur)}<span class="unit">건</span></div>
       ${delta(mCur, mPrev, `전월 같은 구간(${pmM}/1~${pmM}/${pmEndDay})`)}
     </div>
+    ${BRANCHES.map(branchCard).join("")}
     <div class="kpi">
       <div class="label">${mm}월 영업일 평균</div>
       <div class="value">${fmt(avg)}<span class="unit">건</span></div>
@@ -902,13 +968,50 @@ function drawKpis(agg) {
     <div class="kpi">
       <div class="label">${mm}월 인당 일평균</div>
       <div class="value">${perHead}<span class="unit">건</span></div>
-      <div class="delta">${head ? `${head}명` : "인원 미등록"} · 영업일 ${workDays.length}일 기준</div>
+      <div class="delta">${head}명 (${BRANCHES.map(b => `${b} ${Math.round(headOfBranch(lastDay, b))}`).join(" · ")}) · 영업일 ${workDays.length}일 기준</div>
     </div>
     <div class="kpi">
       <div class="label">${mm}월 최다 유입경로</div>
       <div class="value" style="font-size:20px">${topCh.name}</div>
       <div class="delta">${fmt(topCh.value)}건 · ${mm}월의 ${share}%</div>
     </div>`;
+
+  bindHeadEdit();
+}
+
+/**
+ * 인원 숫자를 눌러 바꿔 보는 자리.
+ *
+ * 여기서 바꾼 값은 이 화면에만 남는다. 새로 고치면 모두가 보는 값으로 돌아온다.
+ * 모두에게 같은 값을 두려면 수집 PC 의 headcount.json 을 고치면 된다.
+ * 10분마다 도는 화면 갱신이 그 값을 실어 다시 올린다.
+ */
+function bindHeadEdit() {
+  for (const btn of el("kpis").querySelectorAll(".headnum")) {
+    btn.addEventListener("click", () => {
+      const name = btn.dataset.branch;
+      const input = document.createElement("input");
+      input.type = "number"; input.min = "1"; input.max = "999";
+      input.className = "headnum edit";
+      input.value = HEAD[name];
+      btn.replaceWith(input);
+      input.focus(); input.select();
+
+      let done = false;
+      const commit = (save) => {
+        if (done) return;
+        done = true;
+        const n = Math.round(Number(input.value));
+        if (save && Number.isFinite(n) && n >= 1 && n <= 999) HEAD[name] = n;
+        render();
+      };
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") commit(true);
+        else if (e.key === "Escape") commit(false);
+      });
+      input.addEventListener("blur", () => commit(true));
+    });
+  }
 }
 // 눌러서 열어 둔 범례. 손가락으로 볼 때는 이쪽만 쓴다.
 let PINNED = null;
@@ -1009,7 +1112,9 @@ function drawTable(agg) {
       : `<td class="per">${v}</td>`;
   };
 
-  const head = `<tr><th>${grain}</th><th class="sum">합계</th><th class="per">인당</th>` + cols.map(c => {
+  const head = `<tr><th>${grain}</th>` +
+    BRANCHES.map(b => `<th class="br">${b}</th>`).join("") +
+    `<th class="sum">합계</th><th class="per">인당</th>` + cols.map(c => {
     if (c.isSub) return `<th class="sub">${c.label}</th>`;
     if (!c.openable) return `<th>${c.label}</th>`;
     return `<th class="open" role="button" tabindex="0" aria-expanded="${c.open}"` +
@@ -1017,11 +1122,19 @@ function drawTable(agg) {
            `${c.label}<span class="caret">${c.open ? "▾" : "▸"}</span></th>`;
   }).join("") + `</tr>`;
 
+  const brCell = (b, name) => {
+    const v = b.br?.[name] || 0;
+    return `<td class="br">${v ? fmt(v) : '<span class="zero">–</span>'}</td>`;
+  };
+
   const rowHtml = (b) => b.gap
-    ? `<tr class="gap"><td>${b.label}</td><td class="sum">미수집</td>` +
+    ? `<tr class="gap"><td>${b.label}</td>` +
+      BRANCHES.map(() => `<td class="br"><span class="zero">–</span></td>`).join("") +
+      `<td class="sum">미수집</td>` +
       `<td class="per"><span class="zero">–</span></td>` +
       `<td colspan="${cols.length}">그날 받지 못했습니다. 지금 다시 뽑으면 기준이 달라져 채우지 않습니다.</td></tr>`
     : `<tr${b.tone ? ` class="${b.tone}"` : ""}><td${b.why ? ` title="${b.why}"` : ""}>${b.label}</td>` +
+    BRANCHES.map(n => brCell(b, n)).join("") +
     `<td class="sum">${fmt(rowTotal(b))}</td>` + perCell(b.work, b.pdays) +
     cols.map(c => {
       const v = cell(b, c);
@@ -1036,7 +1149,7 @@ function drawTable(agg) {
         const rows = agg.buckets.filter(b => monthOf(b) === m);
         const open = OPEN_MONTHS.has(m);
         const sum = rows.reduce((s, b) => s + rowTotal(b), 0);
-        return `<tr class="mrow"><td colspan="${cols.length + 2}" role="button" tabindex="0"` +
+        return `<tr class="mrow"><td colspan="${cols.length + 2 + BRANCHES.length}" role="button" tabindex="0"` +
                ` data-m="${m}" aria-expanded="${open}">` +
                `<span class="caret">${open ? "▾" : "▸"}</span>${+m.slice(5)}월` +
                ` <span class="q">${rows.length}${unit} · ${fmt(sum)}건</span></td></tr>` +
@@ -1044,6 +1157,7 @@ function drawTable(agg) {
       }).join("");
 
   const foot = `<tr><td>합계</td>` +
+    BRANCHES.map(n => `<td class="br">${fmt(shown.reduce((s, b) => s + (b.br?.[n] || 0), 0))}</td>`).join("") +
     `<td class="sum">${fmt(grandTotal)}</td>` +
     perCell(shown.reduce((s, b) => s + b.work, 0), shown.reduce((s, b) => s + b.pdays, 0)) +
     cols.map(c => {
@@ -1118,10 +1232,14 @@ function render() {
 
   // 공휴일 표에 없는 해가 들어오면 그 해는 공휴일이 평일로 잡힌다.
   // 평균이 낮아지고 전영업일 비교가 어긋나므로, 조용히 넘어가지 않고 알린다.
-  const openHead = [...new Set(days.map(d => d.slice(0, 7)))].filter(m => !HEADCOUNT[m]);
-  el("chip-head").textContent = openHead.length
-    ? `${openHead.join(", ")} 인원이 등록되지 않았습니다 — 직전 달 인원으로 계산했습니다` : "";
-  el("chip-head").hidden = !openHead.length;
+  // 인원을 화면에서 바꿔 본 상태라면 남들이 보는 값과 다르다는 것을 분명히 해 둔다.
+  el("chip-head").innerHTML = headTouched()
+    ? `인원을 바꿔 본 상태입니다 (${BRANCHES.map(b => `${b} ${HEAD[b]}`).join(" · ")})` +
+      ` — 이 화면에서만 그렇습니다 <button class="chip-reset" type="button">되돌리기</button>`
+    : "";
+  el("chip-head").hidden = !headTouched();
+  const reset = el("chip-head").querySelector(".chip-reset");
+  if (reset) reset.addEventListener("click", () => { HEAD = { ...HEAD_SHARED }; render(); });
 
   const openYears = [...new Set(days.map(d => d.slice(0, 4)))].filter(y => !HOLIDAY_YEARS.has(y));
   el("chip-hol").textContent = openYears.length

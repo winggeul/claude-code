@@ -14,6 +14,8 @@
 import fs from "node:fs";
 import zlib from "node:zlib";
 
+import { findAgentColumn, makeSplitter } from "./roster.mjs";
+
 // aggregate.mjs 와 같은 규칙이어야 한다. 한쪽만 바꾸면 과거분과 앞으로분의 기준이 어긋난다.
 const EXCLUDE = ["협력점해피콜"];       // 신규 인입이 아니라 기존 고객 확인 전화다
 const UNSET = "미지정";                 // 유입경로가 비어 있거나 엉뚱한 값이 들어간 건
@@ -207,18 +209,22 @@ function loadStore(file) {
 }
 
 function mergeStore(store, counts) {
-  const key = (r) => r.date + "\t" + r.channel;
-  const map = new Map(store.rows.map(r => [key(r), r]));
-  let added = 0, updated = 0;
+  const key = (r) => r.date + "\t" + r.channel + "\t" + (r.branch ?? "");
+  // 같은 날을 다시 넣으면 그 날 것은 통째로 갈아끼운다. 지점이 붙기 전 줄이 섞여
+  // 합계가 두 배로 보이는 일을 막는다.
+  const days = new Set(counts.map(c => c.date));
+  const kept = store.rows.filter(r => !days.has(r.date));
+  const removed = store.rows.length - kept.length;
+
+  const map = new Map(kept.map(r => [key(r), r]));
+  let added = 0;
   for (const c of counts) {
-    const k = key(c);
-    if (map.has(k)) {
-      if (map.get(k).count !== c.count) { map.get(k).count = c.count; updated++; }
-    } else { map.set(k, c); added++; }
+    if (!map.has(key(c))) { map.set(key(c), c); added++; }
+    else map.get(key(c)).count += c.count;
   }
   store.rows = [...map.values()].sort((a, b) =>
     a.date === b.date ? a.channel.localeCompare(b.channel, "ko") : a.date.localeCompare(b.date));
-  return { added, updated };
+  return { added, updated: removed };
 }
 
 // ── 실행 ───────────────────────────────────────────────
@@ -259,12 +265,18 @@ for (const sh of sheets) {
   const dateCol = date ? -1 : findDateColumn(rows, col);
   if (!date && dateCol < 0) { console.error(`  건너뜀 ${sh.name} — 날짜를 읽지 못함`); warned++; continue; }
 
+  // 담당자 열은 내보낸 형식마다 자리가 달라서 명단과 맞춰 찾는다.
+  const agentCol = findAgentColumn(rows, null);
+  if (agentCol < 0) { console.error(`  건너뜀 ${sh.name} — 담당자 열을 찾지 못함`); warned++; continue; }
+  const branchOf = makeSplitter();
+
   const tally = new Map();
   const seen = new Map();
   let dropped = 0;
   for (const r of rows) {
     const day = date || serialToIso(+(r[dateCol] ?? "").trim());
     const raw = channelAt(r, col);
+    const branch = branchOf(r[agentCol]);
     if (args.audit) {
       const why = !raw ? "빈값"
                 : PHONE_RE.test(raw) ? "전화번호"
@@ -274,14 +286,14 @@ for (const sh of sheets) {
     }
     if (EXCLUDE.some(x => raw.startsWith(x))) { dropped++; continue; }
     const ch = (!raw || PHONE_RE.test(raw)) ? UNSET : raw;
-    const key = day + "\t" + ch;
+    const key = day + "\t" + ch + "\t" + branch;
     tally.set(key, (tally.get(key) || 0) + 1);
     seen.set(day, (seen.get(day) || 0) + 1);
   }
 
   const counts = [...tally].map(([k, count]) => {
-    const [date, channel] = k.split("\t");
-    return { date, channel, count };
+    const [date, channel, branch] = k.split("\t");
+    return { date, channel, branch, count };
   });
   all.push(...counts);
 
@@ -327,7 +339,7 @@ store.generated = new Date().toISOString().slice(0, 19);
 store.excluded = EXCLUDE;
 
 const days = [...new Set(store.rows.map(r => r.date))].sort();
-console.log(`\n신규 ${added} · 갱신 ${updated}`);
+console.log(`\n신규 ${added}줄 · 다시 넣으며 지운 줄 ${updated}`);
 console.log(`누적 ${store.rows.length}줄 · ${days.length}일 (${days[0]} ~ ${days[days.length - 1]})`);
 if (warned) console.log(`확인이 필요한 시트 ${warned}개`);
 

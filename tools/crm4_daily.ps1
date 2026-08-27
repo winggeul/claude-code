@@ -58,6 +58,10 @@ $OutFile = Join-Path $SiteDir "index.html"
 
 $Template = Join-Path $Base "template.html"
 
+# 지점별 상담사 인원. 이 파일 하나가 모든 사람이 보는 값이다.
+# 숫자를 고치고 저장하면 10분마다 도는 화면 갱신이 그대로 실어 올린다.
+$Headcount = Join-Path $Base "headcount.json"
+
 # 수집이 도는 동안 화면 갱신이 끼어들면 누적본을 동시에 건드리게 된다. 그것을 막는 표시다.
 $Lock = Join-Path $Base "run.lock"
 $Collect  = Join-Path $Base "crm4_collect.ps1"
@@ -114,8 +118,18 @@ function Fail([string]$msg) {
 
 Say "=== 시작 ===" "Cyan"
 
-foreach ($f in @($Template, $Agg)) {
+$Roster = Join-Path $Base "roster.mjs"
+foreach ($f in @($Template, $Agg, $Roster)) {
     if (-not (Test-Path $f)) { Fail "파일이 없습니다: $f" }
+}
+
+# 인원 파일이 없으면 기본값으로 하나 만들어 둔다. 여기 숫자만 고치면 모두의 화면이 바뀐다.
+if (-not (Test-Path $Headcount)) {
+    $json = "{" + [Environment]::NewLine +
+            '  "시흥": 5,' + [Environment]::NewLine +
+            '  "천안": 11' + [Environment]::NewLine + "}"
+    [System.IO.File]::WriteAllText($Headcount, $json, (New-Object System.Text.UTF8Encoding $false))
+    Say "상담사 인원 파일을 만들었습니다: $Headcount" "Green"
 }
 New-Item -ItemType Directory -Path $RawRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $SiteDir -Force | Out-Null
@@ -147,9 +161,14 @@ if (-not $Force -and -not $SkipCollect) {
     }
 }
 
+# 인원을 고쳤으면 받을 것이 없어도 화면은 다시 만들어야 한다.
+$HeadcountChanged = (Test-Path $Headcount) -and (Test-Path $OutFile) -and
+                    ((Get-Item $Headcount).LastWriteTime -gt (Get-Item $OutFile).LastWriteTime)
+if ($HeadcountChanged) { Say "상담사 인원이 바뀌었습니다. 화면을 다시 만듭니다." "Green" }
+
 # 받을 것도 없고 화면도 최신이면 아무것도 하지 않는다.
 # 화면 틀만 보는 실행은 여기서 끝내면 안 된다. 틀 확인은 아래에서 한다.
-if (-not $TemplateOnly -and $nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
+if (-not $TemplateOnly -and -not $HeadcountChanged -and $nothingToCollect -and (Test-Path $OutFile) -and (Test-Path $Store) -and
     ((Get-Item $OutFile).LastWriteTime -ge (Get-Item $Store).LastWriteTime)) {
     Say "할 일이 없습니다." "Green"
     Remove-Item $Lock -Force -ErrorAction SilentlyContinue
@@ -204,7 +223,7 @@ if ($TemplateUrl -and -not $SkipTemplate) {
 
 # 화면 틀만 보는 실행. 바뀐 것이 없으면 로그도 남기지 않고 조용히 끝낸다.
 if ($TemplateOnly) {
-    if (-not $TemplateChanged) {
+    if (-not $TemplateChanged -and -not $HeadcountChanged) {
         if ($TemplateFailed) { $log | Out-File $LogFile -Encoding utf8 -Append }
         exit 0
     }
@@ -246,6 +265,7 @@ if ($csv.Count -eq 0 -and -not (Test-Path $Store)) { Fail "집계할 CSV 도 누
 Say "집계 시작 (CSV $($csv.Count)개)" "Cyan"
 
 $aggArgs = @($Agg, "--raw", $RawRoot, "--store", $Store, "--template", $Template, "--out", $OutFile)
+if (Test-Path $Headcount) { $aggArgs += @("--headcount", $Headcount) }
 if (-not $KeepRaw) { $aggArgs += "--delete" }
 
 $agg = Invoke-Native "node" $aggArgs
