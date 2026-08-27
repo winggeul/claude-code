@@ -65,6 +65,11 @@
   /* 토요일은 근무 형태가 달라 수치가 눈에 띄게 낮다. 한눈에 구분되게 표시한다. */
   tbody tr.sat td:first-child { color: var(--s1); font-weight: 600; }
   tbody tr.sat td { background: color-mix(in srgb, var(--s1) 6%, transparent); }
+  tbody tr:not(.mrow):hover > td { background: var(--surface-2); }
+  tbody tr.sat:not(.mrow):hover > td { background: color-mix(in srgb, var(--s1) 13%, var(--surface-1)); }
+  tbody tr.hol:not(.mrow):hover > td { background: color-mix(in srgb, var(--critical) 13%, var(--surface-1)); }
+  tbody tr:not(.mrow):hover > td.sub { background: var(--surface-3); }
+
   tbody tr.gap td { background: var(--surface-2); color: var(--muted); font-style: italic; text-align: left; }
   tbody tr.gap td:first-child, tbody tr.gap td.sum {
     color: var(--caution); font-weight: 600; font-style: normal; background: var(--surface-2);
@@ -175,8 +180,11 @@
 
   details { margin-top: 8px; }
   summary { font-size: 13px; color: var(--text-secondary); cursor: pointer; padding: 6px 0; }
-  .tablewrap { overflow-x: auto; margin-top: 8px; max-height: 70vh; }
-  thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+  .tablewrap { overflow-x: auto; margin-top: 8px; max-height: 58vh; overscroll-behavior: contain; }
+  thead th {
+    position: sticky; top: 0; background: var(--surface-1); z-index: 1;
+    box-shadow: inset 0 -1px 0 var(--axis);
+  }
   thead th:first-child { left: 0; z-index: 4; }
   tbody td:first-child, tfoot td:first-child {
     position: sticky; left: 0; z-index: 2; background: var(--surface-1);
