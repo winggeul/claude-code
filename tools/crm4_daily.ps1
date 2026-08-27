@@ -256,6 +256,17 @@ if (-not (Test-Path $OutFile)) { Fail "결과 파일이 만들어지지 않았�
 
 # ─── 3. 배포 ───────────────────────────────────────
 
+# 인원을 저장하는 자리(api\headcount.js)와 그 자리가 쓰는 꾸러미 목록을 배포 폴더에 넣는다.
+# 이 둘이 있어야 어느 PC 에서 인원을 고쳐도 모든 PC 가 같은 값을 본다.
+$ApiSrc = Join-Path $Base "api"
+$PkgSrc = Join-Path $Base "package.json"
+if (Test-Path $ApiSrc) {
+    Copy-Item $ApiSrc (Join-Path $SiteDir "api") -Recurse -Force
+    if (Test-Path $PkgSrc) { Copy-Item $PkgSrc $SiteDir -Force }
+} else {
+    Say "api 폴더가 없어 인원은 이 화면에서만 바뀝니다." "Yellow"
+}
+
 if ($SkipDeploy) {
     Say "배포 건너뜀 - 결과: $OutFile" "Green"
 } elseif (-not $VercelToken) {

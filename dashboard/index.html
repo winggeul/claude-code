@@ -250,6 +250,7 @@
     border: 1px solid var(--axis); border-radius: 4px; background: var(--surface-1);
   }
   .kpi .value .sep { color: var(--muted); font-weight: 400; margin: 0 6px; }
+  .kpi .saving { color: var(--muted); }
 
   footer { color: var(--muted); font-size: 12px; margin-top: 26px; }
 
@@ -486,14 +487,14 @@ const emptyBranches = () => ({ "시흥": 0, "천안": 0 });
 /**
  * 지점별 상담사 인원.
  *
- * 주소에 실려 있으면 그 값을, 없으면 아래 기본값을 쓴다.
+ * 값은 서버에 한 곳으로 둔다(/api/headcount). 어느 PC 에서 고쳐도 모든 PC 가 같은 값을 본다.
+ * 1분마다 다시 물어보므로 옆자리에서 고친 것도 새로 고치지 않고 따라온다.
  *
- *   .../index.html?시흥=6&천안=11
- *
- * 주소창에서 숫자만 고치면 그대로 반영되고, 화면의 카드에서 눌러 고쳐도 주소가 같이 바뀐다.
- * 그 주소를 그대로 보내면 받는 사람도 똑같은 숫자를 본다.
+ * 서버에 닿지 못하면(파일로 열었거나 저장소를 아직 연결하지 않았으면) 아래 기본값을 쓴다.
+ * 주소에 ?시흥=6 처럼 적으면 그 화면에서만 그 값으로 본다 - 저장하지 않는 가정용이다.
  */
 const HEAD_BASE = { "시흥": 5, "천안": 11 };
+const HEAD_API = "api/headcount";
 // 주소창에 한글을 쓰면 붙여넣을 때 %EC.. 로 길어진다. 영문 이름도 같이 받는다.
 const HEAD_KEYS = { "시흥": ["시흥", "siheung", "sh"], "천안": ["천안", "cheonan", "cheonahn", "ca"] };
 
@@ -512,21 +513,81 @@ function headFromUrl() {
   return out;
 }
 
-let HEAD = { ...HEAD_BASE, ...headFromUrl() };
-const headTouched = () => BRANCHES.some(b => HEAD[b] !== HEAD_BASE[b]);
+// 서버에 있는 값. 아직 못 받았으면 null 이라 기본값으로 그린다.
+let HEAD_SHARED = null;
+// 주소로 덮어쓴 값. 있으면 이 화면에서만 그 값으로 본다.
+let HEAD_URL = headFromUrl();
+// 저장 상태. 화면 위 표시에 쓴다.
+let HEAD_STATE = { saving: false, error: null, live: false };
 
-/** 바꾼 인원을 주소에 적어 둔다. 그래야 새로 고쳐도 남고, 주소를 보내면 같은 화면이 된다. */
+const headOfAll = () => ({ ...HEAD_BASE, ...(HEAD_SHARED || {}), ...HEAD_URL });
+let HEAD = headOfAll();
+const headTouched = () => Object.keys(HEAD_URL).length > 0;
+
+/** 주소에 적은 가정용 값. 저장하지 않으므로 이 화면에서만 산다. */
 function headToUrl() {
   const q = new URLSearchParams(location.search);
   for (const b of BRANCHES) {
     for (const k of HEAD_KEYS[b]) q.delete(k);
-    if (HEAD[b] !== HEAD_BASE[b]) q.set(b, HEAD[b]);
+    if (HEAD_URL[b] != null) q.set(b, HEAD_URL[b]);
   }
   const qs = q.toString();
   // file:// 로 열어 둔 화면에서는 주소를 바꿀 수 없다. 그때는 화면만 바뀌면 된다.
   try {
     history.replaceState(null, "", location.pathname + (qs ? "?" + decodeURIComponent(qs) : "") + location.hash);
   } catch {}
+}
+
+const sameHead = (a, b) => !!a && !!b && BRANCHES.every(n => a[n] === b[n]);
+
+/** 서버 값을 받아 온다. 바뀐 것이 있을 때만 다시 그린다. */
+async function pullHead() {
+  try {
+    const res = await fetch(HEAD_API, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const j = await res.json();
+    const next = {};
+    for (const n of BRANCHES) {
+      const v = Math.round(Number(j[n]));
+      if (!Number.isFinite(v) || v < 1 || v > 999) return;      // 이상한 응답은 그냥 무시한다
+      next[n] = v;
+    }
+    const live = !j.fallback;
+    if (sameHead(HEAD_SHARED, next) && HEAD_STATE.live === live) return;
+    HEAD_SHARED = next;
+    HEAD_STATE.live = live;
+    HEAD = headOfAll();
+    render();
+  } catch {
+    // 서버가 없는 자리(파일로 연 화면)에서는 기본값 그대로 두면 된다.
+  }
+}
+
+/** 모든 PC 가 볼 값으로 저장한다. */
+async function pushHead(next) {
+  HEAD_STATE.saving = true; HEAD_STATE.error = null;
+  HEAD_URL = {};                     // 저장하면 가정용 값은 걷어낸다
+  HEAD = { ...HEAD_BASE, ...(HEAD_SHARED || {}), ...next };
+  headToUrl(); render();
+  try {
+    const res = await fetch(HEAD_API, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || `저장에 실패했습니다 (${res.status})`);
+    HEAD_SHARED = next; HEAD_STATE.live = true;
+  } catch (e) {
+    // 저장이 안 됐는데 숫자만 바뀌어 있으면 다른 PC 와 다른 값을 보게 된다. 그대로 알린다.
+    HEAD_STATE.error = String(e.message || e);
+    HEAD_URL = { ...next };          // 저장은 못 했으니 이 화면 값으로만 남긴다
+    headToUrl();
+  } finally {
+    HEAD_STATE.saving = false;
+    HEAD = headOfAll();
+    render();
+  }
 }
 
 // 지난달은 인원이 지금과 달랐다. 그때 수치를 지금 인원으로 나누면 사실과 어긋난다.
@@ -950,7 +1011,8 @@ function drawKpis(agg) {
       <div class="label">${md(lastDay)} ${name}</div>
       <div class="value">${fmt(sum)}<span class="sep">/</span>${per}</div>
       <div class="delta">총DB / 인당 · 상담사 <button class="headnum" data-branch="${name}"` +
-      ` title="눌러서 인원을 고칩니다. 주소에도 함께 적힙니다.">${HEAD[name]}</button>명</div>
+      ` title="눌러서 인원을 고칩니다. 모든 PC 에 함께 반영됩니다.">${HEAD[name]}</button>명` +
+      `${HEAD_STATE.saving ? ' <span class="saving">저장 중…</span>' : ""}</div>
     </div>`;
   };
 
@@ -1013,8 +1075,8 @@ function drawKpis(agg) {
 /**
  * 인원 숫자를 눌러 고치는 자리.
  *
- * 고친 값은 주소에도 함께 적힌다. 새로 고쳐도 남고, 그 주소를 보내면 받는 사람도 같은 숫자를 본다.
- * 주소창에서 직접 ?시흥=6&천안=11 처럼 고쳐도 똑같다.
+ * 고치면 서버에 저장한다. 어느 PC 에서 고쳐도 모든 PC 가 같은 값을 보게 하려는 것이다.
+ * 저장이 안 되면 그렇다고 화면 위에 띄운다 - 조용히 이 화면에만 남으면 안 된다.
  */
 function bindHeadEdit() {
   for (const btn of el("kpis").querySelectorAll(".headnum")) {
@@ -1032,9 +1094,9 @@ function bindHeadEdit() {
         if (done) return;
         done = true;
         const n = Math.round(Number(input.value));
-        if (save && Number.isFinite(n) && n >= 1 && n <= 999) HEAD[name] = n;
-        headToUrl();
-        render();
+        if (save && Number.isFinite(n) && n >= 1 && n <= 999 && n !== HEAD[name]) {
+          pushHead({ ...HEAD, [name]: n });
+        } else render();
       };
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") commit(true);
@@ -1263,14 +1325,18 @@ function render() {
 
   // 공휴일 표에 없는 해가 들어오면 그 해는 공휴일이 평일로 잡힌다.
   // 평균이 낮아지고 전영업일 비교가 어긋나므로, 조용히 넘어가지 않고 알린다.
-  // 기본값과 다른 인원으로 보고 있으면 주소에 그 값이 들어 있다는 것을 알린다.
-  el("chip-head").innerHTML = headTouched()
-    ? `인원 ${BRANCHES.map(b => `${b} ${HEAD[b]}`).join(" · ")} — 주소에 들어 있습니다. 이 주소를 그대로 보내면 같은 숫자로 보입니다` +
-      ` <button class="chip-reset" type="button">기본값으로</button>`
+  // 지금 보고 있는 인원이 모두가 보는 값인지, 이 화면에만 있는 값인지 분명히 해 둔다.
+  const headNote =
+    HEAD_STATE.error ? `인원을 저장하지 못했습니다 — ${HEAD_STATE.error} 이 화면에만 반영됐습니다`
+    : headTouched()  ? `인원 ${BRANCHES.map(b => `${b} ${HEAD[b]}`).join(" · ")} — 주소로 정한 값이라 이 화면에서만 그렇습니다`
     : "";
-  el("chip-head").hidden = !headTouched();
+  el("chip-head").innerHTML = headNote
+    ? `${headNote} <button class="chip-reset" type="button">되돌리기</button>` : "";
+  el("chip-head").hidden = !headNote;
   const reset = el("chip-head").querySelector(".chip-reset");
-  if (reset) reset.addEventListener("click", () => { HEAD = { ...HEAD_BASE }; headToUrl(); render(); });
+  if (reset) reset.addEventListener("click", () => {
+    HEAD_URL = {}; HEAD_STATE.error = null; headToUrl(); HEAD = headOfAll(); render();
+  });
 
   const openYears = [...new Set(days.map(d => d.slice(0, 4)))].filter(y => !HOLIDAY_YEARS.has(y));
   el("chip-hol").textContent = openYears.length
@@ -1310,6 +1376,12 @@ addEventListener("resize", () => {
   resizeTimer = setTimeout(render, 120);
 });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(render, 60));
+
+// 인원은 서버에 한 곳으로 둔다. 1분마다 다시 물어보므로 옆자리에서 고친 것도 따라온다.
+// 창을 오래 열어 두었다가 돌아왔을 때가 제일 어긋나기 쉬워서, 그때도 한 번 더 물어본다.
+pullHead();
+setInterval(pullHead, 60000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) pullHead(); });
 
 // 데이터가 파일 안에 박혀 있으면 그대로 그린다. 없을 때만(=미리보기) 옆의 data.json 을 찾아본다.
 if (EMBEDDED) {
