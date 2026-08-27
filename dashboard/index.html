@@ -844,9 +844,17 @@ function drawKpis(agg) {
   const perHead = pdays ? (workSum / pdays).toFixed(1) : "–";
   const head = HEADCOUNT[lastDay.slice(0, 7)];
 
-  const grand = agg.totals.reduce((s, t) => s + t.value, 0);
-  const topCh = agg.totals.find(t => t.name !== FOLD) || agg.totals[0];
-  const share = grand ? Math.round((topCh.value / grand) * 100) : 0;
+  // 최다 유입경로도 이번 달만 센다. 기간 전체로 보면 지난달 실적이 계속 끼어들어
+  // 이번 달에 무엇이 잘 들어오는지가 안 보인다. 비율의 분모도 이번 달 합계다.
+  const mTally = new Map();
+  for (const r of DATA.rows) {
+    if (r.date < mFrom || r.date > lastDay) continue;
+    const g = groupOf(r.channel);
+    mTally.set(g, (mTally.get(g) || 0) + r.count);
+  }
+  const best = [...mTally].sort((a, b) => b[1] - a[1])[0];
+  const topCh = best ? { name: best[0], value: best[1] } : { name: "–", value: 0 };
+  const share = mCur ? Math.round((topCh.value / mCur) * 100) : 0;
 
   const delta = (cur, prev, label) => {
     if (prev == null) return `<div class="delta">비교할 ${label} 없음</div>`;
@@ -883,9 +891,9 @@ function drawKpis(agg) {
       <div class="delta">${head ? `${head}명` : "인원 미등록"} · 영업일 ${workDays.length}일 기준</div>
     </div>
     <div class="kpi">
-      <div class="label">최다 유입경로</div>
+      <div class="label">${mm}월 최다 유입경로</div>
       <div class="value" style="font-size:20px">${topCh.name}</div>
-      <div class="delta">${fmt(topCh.value)}건 · 전체의 ${share}%</div>
+      <div class="delta">${fmt(topCh.value)}건 · ${mm}월의 ${share}%</div>
     </div>`;
 }
 // 눌러서 열어 둔 범례. 손가락으로 볼 때는 이쪽만 쓴다.
