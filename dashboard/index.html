@@ -898,28 +898,21 @@ function drawKpis(agg) {
   const perHead = pdays ? (workSum / pdays).toFixed(1) : "–";
   const head = headOf(lastDay);
 
-  // 지점 카드. 이번 달 총DB 와 인당 일평균을 한 줄에 같이 둔다.
+  // 지점 카드. 맨 앞 카드와 같은 날 - 마지막으로 받은 하루치다.
+  // 달 누계를 실으면 옆 카드들과 기준이 어긋나 나란히 읽히지 않는다.
   const branchCard = (name) => {
     let sum = 0;
     for (const r of DATA.rows) {
-      if (r.branch !== name || r.date < mFrom || r.date > lastDay) continue;
-      sum += r.count;
+      if (r.branch === name && r.date === lastDay) sum += r.count;
     }
-    // 인당의 분모는 전체와 같은 방식이다. 영업일마다 그 달의 그 지점 인원을 더한다.
-    let wSum = 0, wDays = 0;
-    for (const d of workDays) wDays += headOfBranch(d, name);
-    for (const r of DATA.rows) {
-      if (r.branch !== name || isRest(r.date) || r.date < mFrom || r.date > lastDay) continue;
-      wSum += r.count;
-    }
-    const per = wDays > 0 ? (wSum / wDays).toFixed(1) : "–";
+    const heads = headOfBranch(lastDay, name);
+    const per = heads > 0 ? (sum / heads).toFixed(1) : "–";
     return `
     <div class="kpi">
-      <div class="label">${mm}월 ${name}</div>
+      <div class="label">${md(lastDay)} ${name}</div>
       <div class="value">${fmt(sum)}<span class="sep">/</span>${per}</div>
       <div class="delta">총DB / 인당 · 상담사 <button class="headnum" data-branch="${name}"` +
-      ` title="눌러서 인원을 바꿔 봅니다. 이 화면에서만 바뀝니다.">${HEAD[name]}</button>명` +
-      ` · 영업일 ${workDays.length}일</div>
+      ` title="눌러서 인원을 바꿔 봅니다. 이 화면에서만 바뀝니다.">${HEAD[name]}</button>명</div>
     </div>`;
   };
 
@@ -949,6 +942,7 @@ function drawKpis(agg) {
       <div class="value">${fmt(lastVal)}<span class="unit">건</span></div>
       ${delta(lastVal, baseDay ? byDay.get(baseDay) : null, baseDay ? `${baseName}(${md(baseDay)})` : "기준일")}
     </div>
+    ${BRANCHES.map(branchCard).join("")}
     <div class="kpi">
       <div class="label">${weekLabelOf(wFrom)} (${md(wFrom)}~${md(lastDay)})</div>
       <div class="value">${fmt(wCur)}<span class="unit">건</span></div>
@@ -959,7 +953,6 @@ function drawKpis(agg) {
       <div class="value">${fmt(mCur)}<span class="unit">건</span></div>
       ${delta(mCur, mPrev, `전월 같은 구간(${pmM}/1~${pmM}/${pmEndDay})`)}
     </div>
-    ${BRANCHES.map(branchCard).join("")}
     <div class="kpi">
       <div class="label">${mm}월 영업일 평균</div>
       <div class="value">${fmt(avg)}<span class="unit">건</span></div>
