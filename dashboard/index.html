@@ -483,13 +483,51 @@ const HOLIDAY_YEARS = new Set([...HOLIDAYS].map(d => d.slice(0, 4)));
 const BRANCHES = ["시흥", "천안"];
 const emptyBranches = () => ({ "시흥": 0, "천안": 0 });
 
-// 지점별 상담사 인원. 집계할 때 headcount.json 의 값이 화면에 함께 실려 온다.
-// 그래서 보는 사람이 누구든 같은 숫자를 본다. 파일이 없으면 이 기본값을 쓴다.
+/**
+ * 지점별 상담사 인원.
+ *
+ * 주소에 실려 있으면 그 값을, 없으면 아래 기본값을 쓴다.
+ *
+ *   .../index.html?시흥=6&천안=11
+ *
+ * 주소창에서 숫자만 고치면 그대로 반영되고, 화면의 카드에서 눌러 고쳐도 주소가 같이 바뀐다.
+ * 그 주소를 그대로 보내면 받는 사람도 똑같은 숫자를 본다.
+ */
 const HEAD_BASE = { "시흥": 5, "천안": 11 };
-const HEAD_SHARED = { ...HEAD_BASE, ...(EMBEDDED?.headcount || {}) };
-// 화면에서 인원을 바꿔 보는 값. 바꾸면 이 사람 화면에서만 바뀌고, 새로 고치면 돌아온다.
-let HEAD = { ...HEAD_SHARED };
-const headTouched = () => BRANCHES.some(b => HEAD[b] !== HEAD_SHARED[b]);
+// 주소창에 한글을 쓰면 붙여넣을 때 %EC.. 로 길어진다. 영문 이름도 같이 받는다.
+const HEAD_KEYS = { "시흥": ["시흥", "siheung", "sh"], "천안": ["천안", "cheonan", "cheonahn", "ca"] };
+
+function headFromUrl() {
+  const q = new URLSearchParams(location.search);
+  const out = {};
+  for (const b of BRANCHES) {
+    for (const k of HEAD_KEYS[b]) {
+      const raw = q.get(k);
+      if (raw === null) continue;
+      const n = Math.round(Number(raw));
+      if (Number.isFinite(n) && n >= 1 && n <= 999) out[b] = n;
+      break;
+    }
+  }
+  return out;
+}
+
+let HEAD = { ...HEAD_BASE, ...headFromUrl() };
+const headTouched = () => BRANCHES.some(b => HEAD[b] !== HEAD_BASE[b]);
+
+/** 바꾼 인원을 주소에 적어 둔다. 그래야 새로 고쳐도 남고, 주소를 보내면 같은 화면이 된다. */
+function headToUrl() {
+  const q = new URLSearchParams(location.search);
+  for (const b of BRANCHES) {
+    for (const k of HEAD_KEYS[b]) q.delete(k);
+    if (HEAD[b] !== HEAD_BASE[b]) q.set(b, HEAD[b]);
+  }
+  const qs = q.toString();
+  // file:// 로 열어 둔 화면에서는 주소를 바꿀 수 없다. 그때는 화면만 바뀌면 된다.
+  try {
+    history.replaceState(null, "", location.pathname + (qs ? "?" + decodeURIComponent(qs) : "") + location.hash);
+  } catch {}
+}
 
 // 지난달은 인원이 지금과 달랐다. 그때 수치를 지금 인원으로 나누면 사실과 어긋난다.
 const HEADCOUNT = {
@@ -912,7 +950,7 @@ function drawKpis(agg) {
       <div class="label">${md(lastDay)} ${name}</div>
       <div class="value">${fmt(sum)}<span class="sep">/</span>${per}</div>
       <div class="delta">총DB / 인당 · 상담사 <button class="headnum" data-branch="${name}"` +
-      ` title="눌러서 인원을 바꿔 봅니다. 이 화면에서만 바뀝니다.">${HEAD[name]}</button>명</div>
+      ` title="눌러서 인원을 고칩니다. 주소에도 함께 적힙니다.">${HEAD[name]}</button>명</div>
     </div>`;
   };
 
@@ -973,11 +1011,10 @@ function drawKpis(agg) {
 }
 
 /**
- * 인원 숫자를 눌러 바꿔 보는 자리.
+ * 인원 숫자를 눌러 고치는 자리.
  *
- * 여기서 바꾼 값은 이 화면에만 남는다. 새로 고치면 모두가 보는 값으로 돌아온다.
- * 모두에게 같은 값을 두려면 수집 PC 의 headcount.json 을 고치면 된다.
- * 10분마다 도는 화면 갱신이 그 값을 실어 다시 올린다.
+ * 고친 값은 주소에도 함께 적힌다. 새로 고쳐도 남고, 그 주소를 보내면 받는 사람도 같은 숫자를 본다.
+ * 주소창에서 직접 ?시흥=6&천안=11 처럼 고쳐도 똑같다.
  */
 function bindHeadEdit() {
   for (const btn of el("kpis").querySelectorAll(".headnum")) {
@@ -996,6 +1033,7 @@ function bindHeadEdit() {
         done = true;
         const n = Math.round(Number(input.value));
         if (save && Number.isFinite(n) && n >= 1 && n <= 999) HEAD[name] = n;
+        headToUrl();
         render();
       };
       input.addEventListener("keydown", (e) => {
@@ -1225,14 +1263,14 @@ function render() {
 
   // 공휴일 표에 없는 해가 들어오면 그 해는 공휴일이 평일로 잡힌다.
   // 평균이 낮아지고 전영업일 비교가 어긋나므로, 조용히 넘어가지 않고 알린다.
-  // 인원을 화면에서 바꿔 본 상태라면 남들이 보는 값과 다르다는 것을 분명히 해 둔다.
+  // 기본값과 다른 인원으로 보고 있으면 주소에 그 값이 들어 있다는 것을 알린다.
   el("chip-head").innerHTML = headTouched()
-    ? `인원을 바꿔 본 상태입니다 (${BRANCHES.map(b => `${b} ${HEAD[b]}`).join(" · ")})` +
-      ` — 이 화면에서만 그렇습니다 <button class="chip-reset" type="button">되돌리기</button>`
+    ? `인원 ${BRANCHES.map(b => `${b} ${HEAD[b]}`).join(" · ")} — 주소에 들어 있습니다. 이 주소를 그대로 보내면 같은 숫자로 보입니다` +
+      ` <button class="chip-reset" type="button">기본값으로</button>`
     : "";
   el("chip-head").hidden = !headTouched();
   const reset = el("chip-head").querySelector(".chip-reset");
-  if (reset) reset.addEventListener("click", () => { HEAD = { ...HEAD_SHARED }; render(); });
+  if (reset) reset.addEventListener("click", () => { HEAD = { ...HEAD_BASE }; headToUrl(); render(); });
 
   const openYears = [...new Set(days.map(d => d.slice(0, 4)))].filter(y => !HOLIDAY_YEARS.has(y));
   el("chip-hol").textContent = openYears.length

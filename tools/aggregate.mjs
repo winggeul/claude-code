@@ -6,14 +6,13 @@
  *
  * 사용:
  *   node aggregate.mjs --raw <원본폴더> --store <store.json> --template <템플릿.html> --out <결과.html>
- *   node aggregate.mjs ... --delete                 집계에 성공한 CSV 를 지운다
- *   node aggregate.mjs ... --headcount <파일.json>  지점별 상담사 인원. 화면의 인당 값에 쓰인다
+ *   node aggregate.mjs ... --delete      집계에 성공한 CSV 를 지운다
  */
 
 import fs from "node:fs";
 import path from "node:path";
 
-import { findAgentColumn, makeSplitter, BRANCHES } from "./roster.mjs";
+import { findAgentColumn, makeSplitter } from "./roster.mjs";
 
 // 집계에서 빼는 유입경로. 앞부분이 맞으면 제외한다.
 const EXCLUDE = ["협력점해피콜"];       // 신규 인입이 아니라 기존 고객 확인 전화다
@@ -184,28 +183,6 @@ function mergeStore(store, counts) {
   return { added, updated: removed };
 }
 
-/**
- * 지점별 상담사 인원. 화면에 그대로 실려 나가므로 보는 사람이 모두 같은 값을 본다.
- * 파일이 없거나 깨져 있으면 기본값을 쓴다. 인원이 바뀌면 이 파일만 고치면 된다.
- */
-const DEFAULT_HEADCOUNT = { "시흥": 5, "천안": 11 };
-
-function loadHeadcount(file) {
-  if (!file) return { ...DEFAULT_HEADCOUNT };
-  try {
-    const j = JSON.parse(fs.readFileSync(file, "utf8"));
-    const out = { ...DEFAULT_HEADCOUNT };
-    for (const b of BRANCHES) {
-      const n = Number(j[b]);
-      if (Number.isFinite(n) && n > 0) out[b] = n;
-    }
-    return out;
-  } catch {
-    console.error(`  인원 파일을 읽지 못해 기본값을 씁니다: ${file}`);
-    return { ...DEFAULT_HEADCOUNT };
-  }
-}
-
 // ── 실행 ───────────────────────────────────────────────
 
 const args = parseArgs(process.argv.slice(2));
@@ -245,7 +222,6 @@ if (!store.rows.length) {
 
 store.generated = new Date().toISOString().slice(0, 19);
 store.excluded = EXCLUDE;
-store.headcount = loadHeadcount(args.headcount);
 
 // HTML 은 템플릿의 표시 구간만 갈아끼워 만든다.
 const tpl = fs.readFileSync(args.template, "utf8");
@@ -265,7 +241,6 @@ fs.writeFileSync(args.out, html);
 const days = [...new Set(store.rows.map(r => r.date))].sort();
 console.log(`\n누적 ${store.rows.length}줄 · ${days.length}일 (${days[0]} ~ ${days[days.length - 1]})`);
 console.log(`이번 실행: 신규 ${totalAdded}줄 · 다시 세며 지운 줄 ${totalUpdated}`);
-console.log(`상담사 인원: ${BRANCHES.map(b => b + " " + store.headcount[b]).join(" · ")}`);
 console.log(`결과: ${args.out}`);
 
 // 결과 파일을 확실히 쓴 뒤에만 원본을 지운다. 순서가 바뀌면 집계 실패한 날의 데이터를 잃는다.
