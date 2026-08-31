@@ -182,7 +182,7 @@
     position: absolute; pointer-events: none; opacity: 0; transition: opacity .1s;
     background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
     padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.14);
-    min-width: 130px; z-index: 5;
+    min-width: 130px; z-index: 5; overflow: hidden;
   }
   .tip .t-head { font-weight: 600; margin-bottom: 5px; }
   .tip .t-row { display: flex; align-items: center; gap: 6px; justify-content: space-between; }
@@ -762,13 +762,24 @@ function niceTicks(max, count = 4) {
   return out;
 }
 
+/**
+ * 툴팁은 언제나 그림 안쪽에 가둔다.
+ *
+ * 밖으로 삐져나가면 그림 칸(overflow:auto)의 스크롤 범위가 늘어나 스크롤바가 생긴다.
+ * 스크롤바가 생기면 그림이 그만큼 좁아지고, 커서 밑에 있던 조각이 옆으로 밀려나
+ * 툴팁이 사라진다 - 그러면 스크롤바도 사라지고 조각이 제자리로 와서 다시 뜬다.
+ * 이것이 되풀이되면서 화면이 깜빡거린다.
+ */
 function showTip(tip, host, x, y, html) {
   tip.innerHTML = html;
   tip.style.opacity = "1";
-  const hw = host.clientWidth;
-  const tw = tip.offsetWidth;
+  const hw = host.clientWidth, hh = host.clientHeight;
+  // 재는 순서가 중요하다. 최대 크기를 먼저 정해야 아래에서 잰 값이 가둔 뒤의 크기가 된다.
+  tip.style.maxWidth = hw + "px";
+  tip.style.maxHeight = hh + "px";
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
   tip.style.left = Math.max(0, Math.min(hw - tw, x - tw / 2)) + "px";
-  tip.style.top = Math.max(0, y) + "px";
+  tip.style.top = Math.max(0, Math.min(hh - th, y)) + "px";
 }
 const hideTip = (tip) => { tip.style.opacity = "0"; };
 </script>
