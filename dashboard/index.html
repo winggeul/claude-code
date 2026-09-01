@@ -807,6 +807,8 @@ function drawTrend(agg) {
 
   const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img",
     "aria-label": `기간별 전체 DB 수량 추이, 최대 ${max}건` });
+  // 먼저 붙여 둔다. 화면에 없는 글자는 폭을 잴 수 없고, 아래에서 그 폭으로 라벨을 고른다.
+  host.appendChild(svg);
 
   for (const t of ticks) {
     svg.appendChild(svgEl("line", { class: t === 0 ? "baseline" : "gridline",
@@ -815,15 +817,44 @@ function drawTrend(agg) {
     lb.textContent = fmt(t); svg.appendChild(lb);
   }
 
-  // 라벨에 요일이 붙어 넓어졌다. 겹치지 않을 만큼만 띄우고, 양 끝은 안쪽으로 붙인다.
-  const step = Math.ceil(pts.length / Math.max(3, Math.floor(iw / 78)));
-  pts.forEach((b, i) => {
-    if (i % step && i !== pts.length - 1) return;
-    const last = i === pts.length - 1;
+  // 날짜 라벨.
+  //
+  // 마지막 날은 반드시 보여야 하므로 오른쪽 끝에서부터 거꾸로 자리를 잡는다. 왼쪽부터
+  // 잡고 마지막을 덧붙이면 마지막이 바로 앞 라벨과 한두 칸 차이로 붙어 글자가 겹친다.
+  //
+  // 몇 칸 띄울지는 어림하지 않고 그려 보고 폭을 잰다. 글꼴이 늦게 오거나 창이 좁아지면
+  // 어림한 폭이 실제와 달라져서, 계산상으로는 안 겹치는데 화면에서는 겹친다.
+  // 자리가 모자라면 마지막 날 · 첫 날 · 나머지 순으로 지킨다.
+  const GAP = 10;
+  const draw = (i) => {
+    const last = i === pts.length - 1, first = i === 0;
     const lb = svgEl("text", { class: "tick", x: X(i), y: H - 10,
-      "text-anchor": last ? "end" : i === 0 ? "start" : "middle" });
-    lb.textContent = b.label; svg.appendChild(lb);
-  });
+      "text-anchor": last ? "end" : first ? "start" : "middle" });
+    lb.textContent = pts[i].label;
+    svg.appendChild(lb);
+    const w = lb.getComputedTextLength();
+    return { lb, left: last ? X(i) - w : first ? X(i) : X(i) - w / 2, w };
+  };
+
+  const end = draw(pts.length - 1);
+  let bound = end.left;                      // 오른쪽에 이미 놓인 라벨의 왼쪽 끝
+  let floor = -Infinity;                     // 첫 날 라벨이 잡아 둔 왼쪽 자리
+
+  if (pts.length > 1) {
+    const head = draw(0);
+    if (head.left + head.w + GAP <= bound) floor = head.left + head.w + GAP;
+    else head.lb.remove();
+  }
+
+  // 가운데 라벨은 몇 칸마다가 아니라 실제 간격으로 고른다. 칸 수로 세면 오른쪽 끝
+  // 라벨이 넓어서 그 앞 하나가 통째로 빠지고, 거기만 간격이 두 배로 벌어져 보인다.
+  const STRIDE = 96;
+  for (let i = pts.length - 2; i > 0; i--) {
+    const t = draw(i);
+    const fits = t.left + t.w + GAP <= bound && t.left >= floor && bound - t.left >= STRIDE;
+    if (!fits) { t.lb.remove(); continue; }
+    bound = t.left;
+  }
 
   const line = pts.map((b, i) => `${i ? "L" : "M"}${X(i)},${Y(b.total)}`).join("");
   svg.appendChild(svgEl("path", {
@@ -861,7 +892,6 @@ function drawTrend(agg) {
     cross.setAttribute("opacity", 0); dot.setAttribute("opacity", 0); hideTip(tip);
   });
   svg.appendChild(hit);
-  host.appendChild(svg);
 }
 
 // ── 경로별 구성 (가로 누적 막대) ────────────────────────
