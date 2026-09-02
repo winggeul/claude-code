@@ -31,26 +31,41 @@ $fail = 0
 $warn = 0
 $no = 0
 
-function Head([string]$t) { Write-Host ""; Write-Host $t -ForegroundColor Cyan }
+# 화면에는 짧게, 파일에는 전부 남긴다.
+#
+# 콘솔은 화면이 꽉 차 스크롤이 시작되면 그 영역을 다시 그리는데, 이때 한글처럼 두 칸을
+# 차지하는 글자를 한 칸으로 세어 같은 글자를 두 번 찍는 일이 있다. 출력이 한 화면에
+# 들어가면 다시 그릴 일이 없으므로 그 현상 자체가 생기지 않는다.
+#
+# 그래서 정상 항목의 상세는 화면에서 빼고 파일에만 남긴다. 눈으로 볼 때는 어차피
+# 문제와 주의만 찾게 된다.
+$report = New-Object System.Collections.Generic.List[string]
+
+function Emit([string]$line, [string]$color = "Gray", [bool]$screen = $true) {
+    if ($screen) { Write-Host $line -ForegroundColor $color }
+    $script:report.Add($line)
+}
+
+function Head([string]$t) { Emit ""; Emit $t "Cyan" }
 
 function Ok([string]$what, [string]$detail = "") {
-    Write-Host ("  [정상] " + $what) -ForegroundColor Green
-    if ($detail) { Write-Host ("         " + $detail) -ForegroundColor DarkGray }
+    Emit ("  [정상] " + $what) "Green"
+    if ($detail) { Emit ("         " + $detail) "DarkGray" $false }   # 상세는 파일에만
 }
 function Bad([string]$what, [string]$detail = "") {
     $script:fail++
-    Write-Host ("  [문제] " + $what) -ForegroundColor Red
-    if ($detail) { Write-Host ("         " + $detail) -ForegroundColor DarkGray }
+    Emit ("  [문제] " + $what) "Red"
+    if ($detail) { Emit ("         " + $detail) "DarkGray" }
 }
 function Warn([string]$what, [string]$detail = "") {
     $script:warn++
-    Write-Host ("  [주의] " + $what) -ForegroundColor Yellow
-    if ($detail) { Write-Host ("         " + $detail) -ForegroundColor DarkGray }
+    Emit ("  [주의] " + $what) "Yellow"
+    if ($detail) { Emit ("         " + $detail) "DarkGray" }
 }
 function Skip([string]$what, [string]$detail = "") {
     $script:no++
-    Write-Host ("  [생략] " + $what) -ForegroundColor DarkGray
-    if ($detail) { Write-Host ("         " + $detail) -ForegroundColor DarkGray }
+    Emit ("  [생략] " + $what) "DarkGray"
+    if ($detail) { Emit ("         " + $detail) "DarkGray" $false }
 }
 
 # 바깥 프로그램이 stderr 에 한 줄만 써도 오류로 올라온다. 종료 코드로만 판단한다.
@@ -65,9 +80,9 @@ function Run([string]$exe, [string[]]$argv) {
     }
 }
 
-Write-Host "=== 설치 후 점검 ===" -ForegroundColor Cyan
-Write-Host ("폴더: " + $Base)
-Write-Host ("시각: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
+Emit "=== 설치 후 점검 ===" "Cyan"
+Emit ("폴더: " + $Base)
+Emit ("시각: " + (Get-Date -Format "yyyy-MM-dd HH:mm:ss"))
 
 # ─── 1. Node.js ───────────────────────────────────
 
@@ -245,7 +260,7 @@ if ($Deploy) {
     if (-not (Test-Path $daily)) {
         Bad "crm4_daily.ps1 이 없어 배포를 못 해봅니다"
     } else {
-        Write-Host "  배포해 보는 중… (몇 분 걸릴 수 있습니다)" -ForegroundColor DarkGray
+        Emit "  배포해 보는 중… (몇 분 걸릴 수 있습니다)" "DarkGray"
         $d = Run "powershell" @("-ExecutionPolicy", "Bypass", "-File", $daily, "-SkipCollect")
         if ($d.Code -eq 0) { Ok "배포까지 정상" (($d.Out -split "`n" | Select-Object -Last 1)) }
         else { Bad "배포가 정상 종료되지 않았습니다 (코드 $($d.Code))" (($d.Out -split "`n" | Select-Object -Last 6) -join "`n         ") }
@@ -324,18 +339,28 @@ if (-not $CRM4) {
 
 # ─── 정리 ─────────────────────────────────────────
 
-Write-Host ""
-Write-Host "────────────────────────────────" -ForegroundColor DarkGray
+Emit ""
+Emit "────────────────────────────────" "DarkGray"
 if ($fail -eq 0 -and $warn -eq 0) {
-    Write-Host "다 정상입니다. 내일 아침 6시에 평소대로 돕니다." -ForegroundColor Green
+    Emit "다 정상입니다. 내일 아침 6시에 평소대로 돕니다." "Green"
 } elseif ($fail -eq 0) {
-    Write-Host "문제 없음 · 주의 $warn 건. 위의 [주의] 항목만 보시면 됩니다." -ForegroundColor Yellow
+    Emit "문제 없음 · 주의 $warn 건. 위의 [주의] 항목만 보시면 됩니다." "Yellow"
 } else {
-    Write-Host "문제 $fail 건 · 주의 $warn 건. 위의 [문제] 항목을 먼저 보세요." -ForegroundColor Red
+    Emit "문제 $fail 건 · 주의 $warn 건. 위의 [문제] 항목을 먼저 보세요." "Red"
 }
-if ($no) { Write-Host "생략 $no 건 (-CRM4 / -Deploy 를 붙이면 함께 봅니다)" -ForegroundColor DarkGray }
-Write-Host ""
-Write-Host "한글 입력기는 이 점검으로 못 잡습니다. 수집은 붙여넣기로 넣게 해 두었지만," -ForegroundColor DarkGray
-Write-Host "새 프로그램이 입력기를 바꿨다면 내일 아침 로그에 저장 실패가 보일 수 있습니다." -ForegroundColor DarkGray
+if ($no) { Emit "생략 $no 건 (-CRM4 / -Deploy 를 붙이면 함께 봅니다)" "DarkGray" }
+Emit ""
+Emit "한글 입력기는 이 점검으로 못 잡습니다. 수집은 붙여넣기로 넣게 해 두었지만," "DarkGray"
+Emit "새 프로그램이 입력기를 바꿨다면 내일 아침 로그에 저장 실패가 보일 수 있습니다." "DarkGray"
+
+# 화면에서 뺀 상세까지 전부 여기 있다. 메모장이 한글을 제대로 읽도록 BOM 을 붙인다.
+$ReportFile = Join-Path $Base "점검결과.txt"
+try {
+    [System.IO.File]::WriteAllLines($ReportFile, $report, (New-Object System.Text.UTF8Encoding $true))
+    Write-Host ""
+    Write-Host "전체 결과: $ReportFile" -ForegroundColor DarkGray
+} catch {
+    Write-Host "결과 파일을 쓰지 못했습니다: $($_.Exception.Message)" -ForegroundColor Yellow
+}
 
 exit ([int]($fail -gt 0))
