@@ -69,7 +69,7 @@ $VercelToken = $env:VERCEL_TOKEN
 # 화면 틀을 받아올 곳. 이 주소의 파일로 template.html 을 갈아끼운다.
 # 화면만 고치는 일에 이 PC 까지 오지 않으려고 둔 길이다. 데이터는 오가지 않는다.
 # 쓰지 않으려면 빈 문자열로 두면 된다.
-$TemplateUrl = "https://raw.githubusercontent.com/winggeul/claude-code/refs/heads/claude/crm-data-connection-2nbows/dashboard/index.html"
+$TemplateUrl = "https://raw.githubusercontent.com/woori-marketing/crm-db-dashboard/refs/heads/main/dashboard/index.html"
 
 # ─────────────────────────────────────────────────
 

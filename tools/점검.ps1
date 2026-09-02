@@ -23,7 +23,7 @@ $Base = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ErrorActionPreference = "Continue"
 
 $Site = "https://daily-db-count-2mzqhq.vercel.app"
-$TemplateUrl = "https://raw.githubusercontent.com/winggeul/claude-code/refs/heads/claude/crm-data-connection-2nbows/dashboard/index.html"
+$TemplateUrl = "https://raw.githubusercontent.com/woori-marketing/crm-db-dashboard/refs/heads/main/dashboard/index.html"
 
 $fail = 0
 $warn = 0

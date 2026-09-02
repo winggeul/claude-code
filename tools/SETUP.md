@@ -270,7 +270,7 @@ Get-ScheduledTaskInfo -TaskName "CRM4 화면갱신" | Select-Object LastRunTime,
 `template.html` 을 받아 갈아끼웁니다. 화면을 고쳐 올려 두면 다음 날 아침에 반영됩니다.
 
 ```
-https://raw.githubusercontent.com/winggeul/claude-code/refs/heads/claude/crm-data-connection-2nbows/dashboard/index.html
+https://raw.githubusercontent.com/woori-marketing/crm-db-dashboard/refs/heads/main/dashboard/index.html
 ```
 
 받은 파일이 이상하면(너무 작거나, 데이터 자리가 없거나) 버리고 기존 것을 씁니다.
