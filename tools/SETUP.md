@@ -124,9 +124,22 @@ npx.cmd vercel deploy .\site --prod
 
 그다음 <https://vercel.com/account/tokens> 에서 토큰을 발급받아 등록합니다.
 
+토큰을 만들 때 **`Scope` 를 계정 이름(`woori-marketing`)으로** 고르세요. 프로젝트 이름을
+고르면 그 토큰으로는 배포가 안 되고, 나중에 `not valid` 로만 막혀서 원인을 찾기 어렵습니다.
+값은 만든 직후 한 번만 보이므로 그 자리에서 복사해야 합니다.
+
 ```powershell
 [Environment]::SetEnvironmentVariable("VERCEL_TOKEN", "발급받은토큰", "Machine")
 ```
+
+**등록한 뒤에는 PowerShell 을 새로 열어야 합니다.** 등록한 그 창은 열릴 때의 옛 값을
+그대로 들고 있어서, 같은 창에서 확인하면 계속 실패합니다.
+
+```powershell
+npx.cmd vercel whoami --token $env:VERCEL_TOKEN
+```
+
+계정 이름이 찍히면 된 것입니다.
 
 PowerShell을 새로 열고 전체 실행이 되는지 확인합니다.
 

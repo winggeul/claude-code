@@ -23,6 +23,8 @@ $Base = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ErrorActionPreference = "Continue"
 
 $Site = "https://daily-db-count-2mzqhq.vercel.app"
+# 토큰이 이 계정 것인지 본다. 계정이나 프로젝트 하나에만 묶인 토큰을 넣으면 배포가 막힌다.
+$VercelAccount = "woori-marketing"
 $TemplateUrl = "https://raw.githubusercontent.com/woori-marketing/crm-db-dashboard/refs/heads/main/dashboard/index.html"
 
 $fail = 0
@@ -198,11 +200,14 @@ else { Bad "대시보드에 닿지 못했습니다" $s.Body }
 
 $h = Fetch ($Site + "/api/headcount")
 if (-not $h.Ok) {
+    # 저장소를 못 읽으면 여기서 403 이 실려 온다. fallback 과는 다른 상태다.
     Bad "인원 저장 기능에 닿지 못했습니다" $h.Body
-} elseif ($h.Body -match '"fallback"') {
-    Bad "인원 저장소를 읽지 못하고 있습니다" "버셀에서 BLOB_READ_WRITE_TOKEN 이 살아 있는지 보세요. 응답: $($h.Body)"
 } elseif ($h.Body -match '"updated"\s*:\s*"') {
     Ok "인원 저장소 정상" $h.Body
+} elseif ($h.Body -match '"fallback"') {
+    # 오류가 아니다. 스토어는 붙었는데 아직 아무도 인원을 저장한 적이 없는 상태다.
+    # 저장소를 못 읽는 경우는 위에서 403 으로 걸린다.
+    Warn "아직 저장된 인원이 없습니다 (기본값으로 보는 중)" "화면에서 인원을 한 번 넣으면 사라집니다. 응답: $($h.Body)"
 } else {
     Bad "인원 저장 기능의 응답이 이상합니다" $h.Body
 }
@@ -217,6 +222,22 @@ if (-not $tok) {
     Bad "VERCEL_TOKEN 이 없습니다" "배포가 안 됩니다. SETUP.md 5번을 다시 보세요."
 } else {
     Ok "VERCEL_TOKEN 있음" ("$($tok.Length)자 · 값은 찍지 않습니다")
+
+    # 있다고 되는 것이 아니다. 지운 토큰이 그대로 남아 있거나, 프로젝트 하나에만 묶인
+    # 토큰을 넣으면 배포 때가 되어서야 'not valid' 로 막힌다. 여기서 미리 걸러 둔다.
+    if ($npx) {
+        $who = Run $npx.Source @("--yes", "vercel", "whoami", "--token", $tok)
+        $name = ($who.Out -split "`n" | Where-Object { $_ -notmatch "Vercel CLI" } | Select-Object -Last 1)
+        if ($who.Code -ne 0) {
+            Bad "VERCEL_TOKEN 이 통하지 않습니다" ("$($who.Out)`n         버셀에서 토큰을 새로 발급하고 Scope 를 '$VercelAccount' 로 고르세요. 등록 뒤에는 PowerShell 을 새로 열어야 합니다.")
+        } elseif ("$name".Trim() -ne $VercelAccount) {
+            Bad "토큰이 다른 계정 것입니다" "'$VercelAccount' 이어야 하는데 '$($name.Trim())' 입니다."
+        } else {
+            Ok "토큰 확인" $VercelAccount
+        }
+    } else {
+        Skip "토큰이 통하는지 확인" "npx 를 찾지 못했습니다."
+    }
 }
 
 if ($Deploy) {
