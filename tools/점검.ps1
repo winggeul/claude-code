@@ -235,16 +235,15 @@ Head "6. 배포"
 $TokenFile = Join-Path $Base "vercel_token.txt"
 $tok = $null
 if (Test-Path $TokenFile) { $tok = (Get-Content $TokenFile -Raw -Encoding UTF8).Trim() }
-if ($tok) { Ok "토큰 파일" "vercel_token.txt 를 씁니다 (스케줄러도 같은 값을 봅니다)" }
+if ($tok) { Ok "토큰 파일" "vercel_token.txt · $($tok.Length)자 · 값은 찍지 않습니다. 스케줄러도 같은 값을 봅니다" }
 else {
     $tok = [Environment]::GetEnvironmentVariable("VERCEL_TOKEN", "Machine")
     if (-not $tok) { $tok = $env:VERCEL_TOKEN }
     if ($tok) { Warn "환경변수로 토큰을 씁니다" "작업 스케줄러는 환경변수가 바뀌어도 서비스를 다시 시작하기 전까지 옛 값을 씁니다. vercel_token.txt 로 옮기는 편이 안전합니다." }
 }
 if (-not $tok) {
-    Bad "VERCEL_TOKEN 이 없습니다" "배포가 안 됩니다. SETUP.md 5번을 다시 보세요."
+    Bad "토큰이 없습니다" "vercel_token.txt 도 VERCEL_TOKEN 환경변수도 비어 있습니다. 배포가 안 됩니다. SETUP.md 5번을 보세요."
 } else {
-    Ok "VERCEL_TOKEN 있음" ("$($tok.Length)자 · 값은 찍지 않습니다")
 
     # 있다고 되는 것이 아니다. 지운 토큰이 그대로 남아 있거나, 프로젝트 하나에만 묶인
     # 토큰을 넣으면 배포 때가 되어서야 'not valid' 로 막힌다. 여기서 미리 걸러 둔다.
