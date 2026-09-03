@@ -63,8 +63,16 @@ $Lock = Join-Path $Base "run.lock"
 $Collect  = Join-Path $Base "crm4_collect.ps1"
 $Agg      = Join-Path $Base "aggregate.mjs"
 
-# 버셀 토큰. 환경변수에 두는 편이 안전하지만, 없으면 아래에 직접 적어도 된다.
-$VercelToken = $env:VERCEL_TOKEN
+# 버셀 토큰. 파일이 있으면 그것을 먼저 쓰고, 없으면 환경변수를 본다.
+#
+# 파일을 먼저 보는 이유가 있다. 작업 스케줄러 서비스는 시스템 환경변수가 바뀌어도
+# 서비스를 다시 시작하기 전까지 예전 값을 들고 있다. 그래서 토큰을 갈아끼우면
+# 손으로 돌릴 때는 되는데 새벽 자동 실행만 조용히 실패한다. 파일은 매번 새로 읽으므로
+# 그런 일이 없다.
+$TokenFile = Join-Path $Base "vercel_token.txt"
+$VercelToken = $null
+if (Test-Path $TokenFile) { $VercelToken = (Get-Content $TokenFile -Raw -Encoding UTF8).Trim() }
+if (-not $VercelToken) { $VercelToken = $env:VERCEL_TOKEN }
 
 # 화면 틀을 받아올 곳. 이 주소의 파일로 template.html 을 갈아끼운다.
 # 화면만 고치는 일에 이 PC 까지 오지 않으려고 둔 길이다. 데이터는 오가지 않는다.

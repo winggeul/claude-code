@@ -128,15 +128,22 @@ npx.cmd vercel deploy .\site --prod
 고르면 그 토큰으로는 배포가 안 되고, 나중에 `not valid` 로만 막혀서 원인을 찾기 어렵습니다.
 값은 만든 직후 한 번만 보이므로 그 자리에서 복사해야 합니다.
 
+받은 값을 `C:\CRM자동화\vercel_token.txt` 파일에 **그것만** 넣어 저장하세요.
+따옴표도 줄바꿈도 필요 없습니다.
+
 ```powershell
-[Environment]::SetEnvironmentVariable("VERCEL_TOKEN", "발급받은토큰", "Machine")
+Set-Content C:\CRM자동화\vercel_token.txt "발급받은토큰" -NoNewline
 ```
 
-**등록한 뒤에는 PowerShell 을 새로 열어야 합니다.** 등록한 그 창은 열릴 때의 옛 값을
-그대로 들고 있어서, 같은 창에서 확인하면 계속 실패합니다.
+**환경변수(`VERCEL_TOKEN`)에 넣지 마세요.** 넣어도 동작은 하지만, 작업 스케줄러 서비스는
+시스템 환경변수가 바뀌어도 서비스를 다시 시작하기 전까지 예전 값을 들고 있습니다. 그래서
+토큰을 갈아끼우면 **손으로 돌릴 때는 되는데 새벽 자동 실행만 조용히 실패합니다.**
+파일은 매번 새로 읽으므로 그런 일이 없습니다.
+
+확인:
 
 ```powershell
-npx.cmd vercel whoami --token $env:VERCEL_TOKEN
+npx.cmd vercel whoami --token (Get-Content C:\CRM자동화\vercel_token.txt -Raw).Trim()
 ```
 
 계정 이름이 찍히면 된 것입니다.

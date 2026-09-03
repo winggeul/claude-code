@@ -231,8 +231,16 @@ if (-not $h.Ok) {
 
 Head "6. 배포"
 
-$tok = [Environment]::GetEnvironmentVariable("VERCEL_TOKEN", "Machine")
-if (-not $tok) { $tok = $env:VERCEL_TOKEN }
+# crm4_daily.ps1 과 같은 순서로 찾는다. 여기서 통과한 값이 실제 배포에 쓰이는 값이어야 한다.
+$TokenFile = Join-Path $Base "vercel_token.txt"
+$tok = $null
+if (Test-Path $TokenFile) { $tok = (Get-Content $TokenFile -Raw -Encoding UTF8).Trim() }
+if ($tok) { Ok "토큰 파일" "vercel_token.txt 를 씁니다 (스케줄러도 같은 값을 봅니다)" }
+else {
+    $tok = [Environment]::GetEnvironmentVariable("VERCEL_TOKEN", "Machine")
+    if (-not $tok) { $tok = $env:VERCEL_TOKEN }
+    if ($tok) { Warn "환경변수로 토큰을 씁니다" "작업 스케줄러는 환경변수가 바뀌어도 서비스를 다시 시작하기 전까지 옛 값을 씁니다. vercel_token.txt 로 옮기는 편이 안전합니다." }
+}
 if (-not $tok) {
     Bad "VERCEL_TOKEN 이 없습니다" "배포가 안 됩니다. SETUP.md 5번을 다시 보세요."
 } else {
